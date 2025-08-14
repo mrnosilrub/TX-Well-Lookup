@@ -1,5 +1,5 @@
 # TX Well Lookup — Astro + FastAPI Monorepo (Dev Scaffold)
-
+ 
 Address‑first reports for Texas water wells (TWDB SDR/GWDB + TCEQ links) with an Energy Overlay (RRC). This scaffold boots a local stack via Docker Compose: Astro web, FastAPI backend, Postgres+PostGIS, Redis, and a Celery worker.
 
 > **Status:** Developer scaffold. Endpoints return stubs; DB tables are created. Swap stubs with real ingest + search when ready.
