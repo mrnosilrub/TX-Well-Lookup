@@ -1,0 +1,66 @@
+---
+const base = (import.meta.env.PUBLIC_BASE_PATH || '/').replace(/\/?$/, '/');
+---
+<section class="card">
+  <h3 style="margin-top:0">Search</h3>
+  <form id="search-form" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <input id="q" name="q" placeholder="Search wells..." style="flex:1;min-width:200px;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb" />
+    <button class="btn" type="submit">Search</button>
+  </form>
+  <div id="results" style="margin-top:12px"></div>
+  <script>
+    const form = document.getElementById('search-form');
+    const results = document.getElementById('results');
+    async function fetchItems() {
+      try {
+        const res = await fetch(`${"${base}"}api/search.json`);
+        if (!res.ok) throw new Error('bad status');
+        const data = await res.json();
+        return Array.isArray(data.items) ? data.items : [];
+      } catch {
+        return [];
+      }
+    }
+    function render(items) {
+      if (!items.length) {
+        results.innerHTML = '<small>No results.</small>';
+        window.__tx_map?.setItems([]);
+        return;
+      }
+      const ul = document.createElement('ul');
+      ul.style.listStyle = 'none';
+      ul.style.padding = '0';
+      ul.style.margin = '0';
+      items.forEach((it) => {
+        const li = document.createElement('li');
+        li.style.padding = '10px 0';
+        li.style.borderBottom = '1px solid #eee';
+        li.innerHTML = `
+          <strong>${it.name}</strong>
+          <div><small>${it.county} County • Depth: ${it.depth_ft} ft</small></div>
+          <div style="margin-top:6px"><button data-id="${it.id}" class="btn" style="padding:6px 10px">Fly to</button></div>
+        `;
+        ul.appendChild(li);
+      });
+      results.innerHTML = '';
+      results.appendChild(ul);
+      results.querySelectorAll('button[data-id]').forEach((btn) => {
+        btn.addEventListener('click', (e) => {
+          e.preventDefault();
+          const id = btn.getAttribute('data-id');
+          window.__tx_map?.flyToItem(id);
+        });
+      });
+      window.__tx_map?.setItems(items);
+    }
+    // initial load and on submit (no filtering yet; stub just returns all)
+    fetchItems().then(render);
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const items = await fetchItems();
+      render(items);
+    });
+  </script>
+</section>
+
+
