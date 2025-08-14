@@ -22,7 +22,7 @@ jobs:
       - name: Build
         working-directory: apps/web
         env:
-          PUBLIC_BASE_PATH: "/" # change to "/<repo>" if publishing at subpath
+          PUBLIC_BASE_PATH: "/TX-Well-Lookup" # GitHub Pages project subpath
         run: npm run build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
