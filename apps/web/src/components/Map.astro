@@ -48,6 +48,7 @@
         marker.openPopup();
       }
       window.__tx_map = { setItems, flyToItem };
+      window.dispatchEvent(new CustomEvent('tx_map_ready'));
     };
     if (window.L) {
       window.__initLeaflet();

@@ -19,10 +19,21 @@
         return [];
       }
     }
+    function ensureMap(items) {
+      if (window.__tx_map) {
+        window.__tx_map.setItems(items);
+        return;
+      }
+      const onReady = () => {
+        window.__tx_map?.setItems(items);
+        window.removeEventListener('tx_map_ready', onReady);
+      };
+      window.addEventListener('tx_map_ready', onReady);
+    }
     function render(items) {
       if (!items.length) {
         results.innerHTML = '<small>No results.</small>';
-        window.__tx_map?.setItems([]);
+        ensureMap([]);
         return;
       }
       const ul = document.createElement('ul');
@@ -49,10 +60,10 @@
           window.__tx_map?.flyToItem(id);
         });
       });
-      window.__tx_map?.setItems(items);
+      ensureMap(items);
     }
     // initial load and on submit (no filtering yet; stub just returns all)
-    fetchItems().then(render);
+    fetchItems().then((items) => { render(items); ensureMap(items); });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const items = await fetchItems();
