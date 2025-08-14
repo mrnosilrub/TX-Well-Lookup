@@ -11,40 +11,51 @@
     src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
     integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
     crossorigin=""
+    id="leaflet-lib"
+    onload="window.__initLeaflet && window.__initLeaflet()"
   ></script>
-  <script>
-    const map = L.map('map', { zoomControl: true }).setView([31.0, -99.0], 6);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; OpenStreetMap contributors'
-    }).addTo(map);
-    const markersById = new Map();
-    function clearMarkers() {
-      markersById.forEach((m) => m.remove());
-      markersById.clear();
-    }
-    function setItems(items) {
-      clearMarkers();
-      const bounds = L.latLngBounds();
-      items.forEach((it) => {
-        const marker = L.marker([it.lat, it.lon]).addTo(map);
-        marker.bindPopup(`<strong>${it.name}</strong><br/>${it.county} County`);
-        markersById.set(it.id, marker);
-        bounds.extend([it.lat, it.lon]);
-      });
-      if (items.length > 0) {
-        map.fitBounds(bounds.pad(0.2));
+  <script is:inline>
+    window.__initLeaflet = () => {
+      if (!window.L) return; // wait for library
+      const map = L.map('map', { zoomControl: true }).setView([31.0, -99.0], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap contributors'
+      }).addTo(map);
+      const markersById = new Map();
+      function clearMarkers() {
+        markersById.forEach((m) => m.remove());
+        markersById.clear();
       }
+      function setItems(items) {
+        clearMarkers();
+        const bounds = L.latLngBounds();
+        items.forEach((it) => {
+          const marker = L.marker([it.lat, it.lon]).addTo(map);
+          marker.bindPopup(`<strong>${it.name}</strong><br/>${it.county} County`);
+          markersById.set(it.id, marker);
+          bounds.extend([it.lat, it.lon]);
+        });
+        if (items.length > 0) {
+          map.fitBounds(bounds.pad(0.2));
+        }
+      }
+      function flyToItem(id) {
+        const marker = markersById.get(id);
+        if (!marker) return;
+        const ll = marker.getLatLng();
+        map.flyTo(ll, Math.max(map.getZoom(), 12), { duration: 0.6 });
+        marker.openPopup();
+      }
+      window.__tx_map = { setItems, flyToItem };
+    };
+    if (window.L) {
+      window.__initLeaflet();
+    } else {
+      window.addEventListener('load', () => {
+        if (window.L) window.__initLeaflet();
+      });
     }
-    function flyToItem(id) {
-      const marker = markersById.get(id);
-      if (!marker) return;
-      const ll = marker.getLatLng();
-      map.flyTo(ll, Math.max(map.getZoom(), 12), { duration: 0.6 });
-      marker.openPopup();
-    }
-    // expose for page scripts
-    window.__tx_map = { setItems, flyToItem };
   </script>
 </section>
 
