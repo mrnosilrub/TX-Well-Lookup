@@ -1,5 +1,7 @@
 ---
 const title = 'TX Well Lookup';
+import Hero from '../components/Hero.astro';
+const base = (import.meta.env.PUBLIC_BASE_PATH || '/').replace(/\/?$/, '/');
 ---
 <!doctype html>
 <html lang="en">
@@ -25,17 +27,17 @@ const title = 'TX Well Lookup';
       <div class="wrap" style="display:flex;gap:12px;align-items:center;">
         <strong>TX Well Lookup</strong>
         <span style="color:var(--muted)">starter static site</span>
-        <a class="btn" href="https://github.com/" rel="noreferrer">GitHub</a>
+        <nav style="margin-left:auto;display:flex;gap:12px;align-items:center;">
+          <a href={base}>Home</a>
+          <a href={`${base}about`}>About</a>
+          <a class="btn" href="https://github.com/" rel="noreferrer">GitHub</a>
+        </nav>
       </div>
     </header>
 
     <main class="wrap" style="padding-block:24px">
       <div class="grid">
-        <section class="card">
-          <h2>It works 🎯</h2>
-          <p>This is a minimal Astro site scaffold. Next sprints add API, data pipeline, maps, and paid reports.</p>
-          <p><small>Build path base = <code>{Astro.site?.pathname || '/'}</code> • Update via <code>PUBLIC_BASE_PATH</code>.</small></p>
-        </section>
+        <Hero />
         <section class="card">
           <h3>What’s next</h3>
           <ol>
