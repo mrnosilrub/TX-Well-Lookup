@@ -1,0 +1,10 @@
+---
+const base = (import.meta.env.PUBLIC_BASE_PATH || '/').replace(/\/?$/, '/');
+---
+<section class="card">
+  <h1>TX Well Lookup</h1>
+  <p>Find water wells in Texas and see nearby energy activity. Built from SDR, GWDB, and RRC datasets.</p>
+  <p><a class="btn" href={`${base}about`}>About the project</a></p>
+</section>
+
+
