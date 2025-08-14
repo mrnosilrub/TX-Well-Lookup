@@ -1,0 +1,686 @@
+=== FILE: README.md
+# TX Well Lookup — Astro + FastAPI Monorepo (Dev Scaffold)
+
+Address‑first reports for Texas water wells (TWDB SDR/GWDB + TCEQ links) with an Energy Overlay (RRC). This scaffold boots a local stack via Docker Compose: Astro web, FastAPI backend, Postgres+PostGIS, Redis, and a Celery worker.
+
+> **Status:** Developer scaffold. Endpoints return stubs; DB tables are created. Swap stubs with real ingest + search when ready.
+
+## Quickstart
+
+```bash
+# 1) clone and enter
+# git clone <your repo> && cd tx-well-lookup
+
+# 2) copy environment
+cp .env.example .env
+
+# 3) boot dev stack
+docker compose up --build
+
+# Web:   http://localhost:4321
+# API:   http://localhost:8000/docs
+# DB:    localhost:5432  (txwell/txwell)
+# Redis: localhost:6379
+```
+
+## What’s here
+- **apps/web** — Astro + Tailwind + MapLibre (OSM raster style). Uses `PUBLIC_API_URL` to call API.
+- **apps/api** — FastAPI with CORS; stub routes for `/v1/search` and `/v1/wells/{id}`.
+- **apps/worker** — Celery worker scaffold for nightly/delta jobs.
+- **db/init** — PostGIS + minimal tables auto‑created at container init.
+- **docker-compose.yml** — Dev orchestration; mounts code for hot‑reload.
+- **Makefile** — Convenience targets.
+
+## Next steps (swap stubs → real data)
+1. Implement SDR nightly loader in `data-pipeline/jobs/nightly_snapshots.py`.
+2. Add delta polling job for SDR FeatureServer; commit to `apps/worker` task.
+3. Build RRC permit + wellbore ingesters; expose `/v1/energy/nearby`.
+4. Replace `/v1/search` to query PostGIS (radius + facets).
+5. Ship PDF generator route and Stripe credit gates.
+
+---
+
+## Project Structure
+```
+tx-well-lookup/
+  apps/
+    web/           # Astro front-end (SSR-capable, but dev uses preview)
+    api/           # FastAPI backend
+    worker/        # Celery worker for ETL/alerts
+  data-pipeline/
+    jobs/          # ETL scripts (stubs)
+    sources/       # connectors (add later)
+    transforms/    # normalizers (add later)
+  db/
+    init/          # SQL executed at DB init (PostGIS + tables)
+  infra/
+    terraform/     # IaC (placeholder)
+  .github/
+    workflows/     # CI/CD (placeholders)
+  docker-compose.yml
+  Makefile
+  .env.example
+  .gitignore
+  README.md
+```
+
+---
+
+## License & Attribution
+Public data from TWDB (SDR/GWDB), TCEQ (historic scans), and RRC (permits/wellbores). Include clear attribution and disclaimers in production.
+
+
+=== FILE: .gitignore
+# Node
+node_modules
+.pnpm-store
+.cache
+.dist
+
+# Python
+__pycache__
+*.pyc
+.venv
+
+# Env
+.env
+.env.*
+
+# Build outputs
+apps/web/dist
+apps/web/.astro
+apps/api/.pytest_cache
+
+# Misc
+.DS_Store
+
+
+=== FILE: .env.example
+# Web (Astro)
+PUBLIC_API_URL=http://localhost:8000
+
+# API
+DATABASE_URL=postgresql://txwell:txwell@db:5432/txwell
+REDIS_URL=redis://redis:6379/0
+CORS_ORIGINS=http://localhost:4321
+
+# Worker (Celery)
+CELERY_BROKER_URL=redis://redis:6379/1
+CELERY_RESULT_BACKEND=redis://redis:6379/2
+
+
+=== FILE: docker-compose.yml
+version: "3.9"
+services:
+  db:
+    image: postgis/postgis:15-3.4
+    environment:
+      POSTGRES_USER: txwell
+      POSTGRES_PASSWORD: txwell
+      POSTGRES_DB: txwell
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db/init:/docker-entrypoint-initdb.d:ro
+
+  redis:
+    image: redis:7
+    ports:
+      - "6379:6379"
+
+  api:
+    build: ./apps/api
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: ${REDIS_URL}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    volumes:
+      - ./apps/api:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+
+  web:
+    build: ./apps/web
+    environment:
+      PUBLIC_API_URL: ${PUBLIC_API_URL}
+    volumes:
+      - ./apps/web:/app
+    ports:
+      - "4321:4321"
+    depends_on:
+      - api
+    command: ["npm","run","dev","--","--host","0.0.0.0","--port","4321"]
+
+  worker:
+    build: ./apps/worker
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      CELERY_BROKER_URL: ${CELERY_BROKER_URL}
+      CELERY_RESULT_BACKEND: ${CELERY_RESULT_BACKEND}
+    volumes:
+      - ./apps/worker:/app
+      - ./data-pipeline:/data-pipeline
+    depends_on:
+      - db
+      - redis
+
+volumes:
+  pgdata:
+
+
+=== FILE: Makefile
+.PHONY: dev stop logs psql
+
+DEV?=1
+
+dev:
+	docker compose up --build
+
+stop:
+	docker compose down
+
+logs:
+	docker compose logs -f --tail=100
+
+psql:
+	PGPASSWORD=txwell psql -h localhost -U txwell -d txwell
+
+
+=== FILE: apps/web/Dockerfile
+FROM node:20-slim
+WORKDIR /app
+COPY package.json package-lock.json* pnpm-lock.yaml* yarn.lock* ./
+RUN if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
+    elif [ -f pnpm-lock.yaml ]; then corepack enable && pnpm i --frozen-lockfile; \
+    else npm ci; fi
+COPY . .
+# default to preview; docker-compose overrides with `npm run dev`
+RUN npm run build || true
+EXPOSE 4321
+CMD ["npm","run","preview","--","--host","0.0.0.0","--port","4321"]
+
+
+=== FILE: apps/web/package.json
+{
+  "name": "tx-well-lookup-web",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "astro": "^4.14.0",
+    "@astrojs/tailwind": "^5.1.0",
+    "tailwindcss": "^3.4.10",
+    "maplibre-gl": "^4.7.1"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.2"
+  }
+}
+
+
+=== FILE: apps/web/astro.config.mjs
+import tailwind from "@astrojs/tailwind";
+
+/**** Astro config ****/
+/** SSR optional later via adapters; dev uses preview server */
+export default {
+  integrations: [tailwind({ applyBaseStyles: true })],
+  server: { host: true }
+};
+
+
+=== FILE: apps/web/tailwind.config.cjs
+/** @type {import('tailwindcss').Config} */
+module.exports = {
+  content: ["./src/**/*.{astro,html,js,ts}", "./src/components/**/*.{astro,js,ts}"],
+  theme: { extend: {} },
+  plugins: []
+};
+
+
+=== FILE: apps/web/postcss.config.cjs
+module.exports = { plugins: { tailwindcss: {}, autoprefixer: {} } };
+
+
+=== FILE: apps/web/tsconfig.json
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "preserve",
+    "strict": true,
+    "baseUrl": ".",
+    "types": ["astro/client"]
+  }
+}
+
+
+=== FILE: apps/web/src/styles/global.css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #app { height: 100%; }
+
+
+=== FILE: apps/web/src/pages/index.astro
+---
+const API_URL = import.meta.env.PUBLIC_API_URL || "http://localhost:8000";
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TX Well Lookup — Dev</title>
+    <link rel="stylesheet" href="/src/styles/global.css" />
+  </head>
+  <body class="min-h-screen bg-gray-50 text-gray-900">
+    <header class="px-6 py-4 border-b bg-white sticky top-0 z-10">
+      <div class="max-w-6xl mx-auto flex items-center gap-4">
+        <div class="font-semibold text-lg">TX Well Lookup</div>
+        <form id="searchForm" class="flex-1 flex gap-2">
+          <input id="q" name="q" placeholder="Search address, owner, driller, county…" class="flex-1 border rounded px-3 py-2" />
+          <button class="px-4 py-2 bg-black text-white rounded">Search</button>
+        </form>
+        <a href="#" class="text-sm underline">Docs</a>
+      </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto p-6 grid grid-cols-1 lg:grid-cols-5 gap-4">
+      <aside class="lg:col-span-1 space-y-4">
+        <div class="p-4 bg-white rounded shadow">
+          <div class="font-medium mb-2">Filters (stub)</div>
+          <div class="text-sm text-gray-600">County, Type, Date, Depth, Has Plugging…</div>
+        </div>
+      </aside>
+      <section class="lg:col-span-4">
+        <div id="map" class="w-full h-[70vh] bg-gray-200 rounded"></div>
+        <div class="mt-4 p-4 bg-white rounded shadow">
+          <div class="font-medium">Results</div>
+          <ul id="results" class="text-sm text-gray-700"></ul>
+        </div>
+      </section>
+    </main>
+
+    <script type="module">
+      import maplibregl from 'maplibre-gl';
+
+      const map = new maplibregl.Map({
+        container: 'map',
+        style: '/style/osm-style.json',
+        center: [-97.5, 31.0],
+        zoom: 5
+      });
+      map.addControl(new maplibregl.NavigationControl(), 'top-right');
+
+      async function search(q) {
+        const res = await fetch(`${API_URL}/v1/search?q=${encodeURIComponent(q||'')}`);
+        const data = await res.json();
+        const list = document.getElementById('results');
+        list.innerHTML = '';
+        (data.items || []).forEach((it) => {
+          const li = document.createElement('li');
+          li.textContent = `${it.id} · ${it.county || ''} · ${it.owner_name || ''}`;
+          list.appendChild(li);
+          if (it.lon && it.lat) {
+            new maplibregl.Marker().setLngLat([it.lon, it.lat]).addTo(map);
+          }
+        });
+        if (data.items?.length && data.items[0].lon && data.items[0].lat) {
+          map.flyTo({ center: [data.items[0].lon, data.items[0].lat], zoom: 11 });
+        }
+      }
+
+      document.getElementById('searchForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        const q = document.getElementById('q').value;
+        search(q);
+      });
+
+      // initial
+      search('');
+    </script>
+  </body>
+</html>
+
+
+=== FILE: apps/web/public/style/osm-style.json
+{
+  "version": 8,
+  "sources": {
+    "osm-tiles": {
+      "type": "raster",
+      "tiles": ["https://tile.openstreetmap.org/{z}/{x}/{y}.png"],
+      "tileSize": 256,
+      "attribution": "© OpenStreetMap contributors"
+    }
+  },
+  "layers": [
+    {
+      "id": "osm",
+      "type": "raster",
+      "source": "osm-tiles",
+      "minzoom": 0,
+      "maxzoom": 19
+    }
+  ]
+}
+
+
+=== FILE: apps/api/Dockerfile
+FROM python:3.11-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app ./app
+EXPOSE 8000
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+
+=== FILE: apps/api/requirements.txt
+fastapi==0.112.2
+uvicorn[standard]==0.30.6
+pydantic==2.8.2
+SQLAlchemy==2.0.32
+psycopg2-binary==2.9.9
+python-dotenv==1.0.1
+redis==5.0.8
+
+
+=== FILE: apps/api/app/__init__.py
+# empty
+
+
+=== FILE: apps/api/app/main.py
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from .routers import search, wells
+import os
+
+app = FastAPI(title="TX Well Lookup API", version="0.1.0")
+
+origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "http://localhost:4321").split(",")]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+app.include_router(search.router, prefix="/v1")
+app.include_router(wells.router, prefix="/v1")
+
+
+=== FILE: apps/api/app/routers/search.py
+from fastapi import APIRouter, Query
+from typing import List, Optional
+
+router = APIRouter()
+
+@router.get("/search")
+async def search(q: Optional[str] = Query(default="")):
+    """Stubbed search endpoint. Replace with PostGIS-powered query.
+    Returns a couple of fake wells near Austin to prove the flow.
+    """
+    items = [
+        {"id": "SDR-123", "owner_name": "Doe Ranch, LLC", "county": "Travis", "lat": 30.2672, "lon": -97.7431},
+        {"id": "SDR-456", "owner_name": "Smith Farms", "county": "Hays", "lat": 30.0394, "lon": -97.8806}
+    ]
+    return {"items": items}
+
+
+=== FILE: apps/api/app/routers/wells.py
+from fastapi import APIRouter
+
+router = APIRouter()
+
+@router.get("/wells/{well_id}")
+async def well_detail(well_id: str):
+    # Stub detail
+    return {
+        "id": well_id,
+        "owner_name": "Doe Ranch, LLC",
+        "county": "Travis",
+        "date_completed": "2012-05-01",
+        "borehole_depth_ft": 420,
+        "proposed_use": "Domestic",
+        "location_confidence": "medium",
+        "documents": [
+            {"type": "sdr_well_report", "url": "https://example.com/TWDB.pdf"}
+        ]
+    }
+
+
+=== FILE: apps/worker/Dockerfile
+FROM python:3.11-slim
+ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY worker.py .
+CMD ["celery", "-A", "worker:app", "worker", "--loglevel=info"]
+
+
+=== FILE: apps/worker/requirements.txt
+celery[redis]==5.4.0
+psycopg2-binary==2.9.9
+redis==5.0.8
+
+
+=== FILE: apps/worker/worker.py
+import os
+from celery import Celery
+
+broker_url = os.getenv("CELERY_BROKER_URL", "redis://redis:6379/1")
+result_backend = os.getenv("CELERY_RESULT_BACKEND", "redis://redis:6379/2")
+
+app = Celery("txwell", broker=broker_url, backend=result_backend)
+
+@app.task
+def ingest_nightly():
+    # TODO: call data-pipeline/jobs/nightly_snapshots.py
+    return {"ok": True}
+
+@app.task
+def tiles_nightly():
+    # TODO: build PMTiles and upload to storage
+    return {"ok": True}
+
+
+=== FILE: db/init/01_postgis_and_tables.sql
+-- Enable PostGIS
+CREATE EXTENSION IF NOT EXISTS postgis;
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+-- Minimal tables (expand with proper types/constraints later)
+CREATE TABLE IF NOT EXISTS well_reports (
+  id TEXT PRIMARY KEY,
+  owner_name TEXT,
+  address TEXT,
+  county TEXT,
+  lat DOUBLE PRECISION,
+  lon DOUBLE PRECISION,
+  geom GEOMETRY(Point, 4326),
+  date_completed DATE,
+  proposed_use TEXT,
+  well_type TEXT,
+  borehole_depth_ft NUMERIC,
+  driller_name TEXT,
+  plugging_report_id TEXT,
+  location_error_m NUMERIC,
+  source_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS well_reports_geom_idx ON well_reports USING GIST (geom);
+CREATE INDEX IF NOT EXISTS well_reports_owner_trgm ON well_reports USING GIN (owner_name gin_trgm_ops);
+
+CREATE TABLE IF NOT EXISTS plugging_reports (
+  id TEXT PRIMARY KEY,
+  county TEXT,
+  lat DOUBLE PRECISION,
+  lon DOUBLE PRECISION,
+  geom GEOMETRY(Point, 4326),
+  date_plugged DATE,
+  notes TEXT,
+  source_url TEXT
+);
+CREATE INDEX IF NOT EXISTS plugging_reports_geom_idx ON plugging_reports USING GIST (geom);
+
+CREATE TABLE IF NOT EXISTS gwdb_wells (
+  id TEXT PRIMARY KEY,
+  owner_name TEXT,
+  aquifer TEXT,
+  well_depth_ft NUMERIC,
+  has_water_level BOOLEAN,
+  has_water_quality BOOLEAN,
+  lat DOUBLE PRECISION,
+  lon DOUBLE PRECISION,
+  geom GEOMETRY(Point, 4326),
+  source_url TEXT
+);
+CREATE INDEX IF NOT EXISTS gwdb_wells_geom_idx ON gwdb_wells USING GIST (geom);
+
+CREATE TABLE IF NOT EXISTS rrc_permits (
+  api14 TEXT PRIMARY KEY,
+  operator TEXT,
+  status TEXT,
+  permit_date DATE,
+  county TEXT,
+  lat DOUBLE PRECISION,
+  lon DOUBLE PRECISION,
+  geom GEOMETRY(Point, 4326),
+  source_ref TEXT
+);
+CREATE INDEX IF NOT EXISTS rrc_permits_geom_idx ON rrc_permits USING GIST (geom);
+
+CREATE TABLE IF NOT EXISTS rrc_wellbores (
+  api14 TEXT,
+  wb_id TEXT,
+  status TEXT,
+  spud_date DATE,
+  PRIMARY KEY (api14, wb_id)
+);
+
+CREATE TABLE IF NOT EXISTS well_links (
+  sdr_id TEXT,
+  gwdb_id TEXT,
+  match_score NUMERIC,
+  PRIMARY KEY (sdr_id, gwdb_id)
+);
+
+-- Users / billing (skeleton)
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY,
+  email TEXT UNIQUE,
+  plan TEXT,
+  seat_org_id UUID,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS credit_grants (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  amount INTEGER,
+  reason TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS credit_spends (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  amount INTEGER,
+  object_type TEXT,
+  object_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS reports (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  address TEXT,
+  center GEOMETRY(Point, 4326),
+  radius_m INT,
+  pdf_url TEXT,
+  zip_url TEXT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE TABLE IF NOT EXISTS alerts (
+  id UUID PRIMARY KEY,
+  user_id UUID REFERENCES users(id),
+  center GEOMETRY(Point, 4326),
+  radius_m INT,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+
+=== FILE: data-pipeline/jobs/nightly_snapshots.py
+#!/usr/bin/env python3
+"""Stub for nightly SDR/RRC loaders.
+Replace with:
+  - fetch SDR bulk files -> upsert into well_reports, plugging_reports
+  - fetch RRC permit daily + wellbore monthly -> upsert rrc_permits, rrc_wellbores
+  - rebuild PMTiles (optional)
+"""
+print("nightly snapshots would run here")
+
+
+=== FILE: .github/workflows/ci.yml
+name: CI
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm ci
+      - run: npm run build --if-present
+  api:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/api
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.11' }
+      - run: pip install -r requirements.txt
+      - run: python -c "import fastapi,uvicorn; print('ok')"
+
+
+=== FILE: infra/terraform/README.md
+# Terraform (placeholder)
+
+Plan to provision:
+- RDS Postgres (PostGIS), ElastiCache Redis
+- S3 + CloudFront for assets (reports/tiles)
+- App Runner or ECS for api/web
+- EventBridge schedules for nightly jobs
+
+Use GitHub OIDC for CI deployments.
