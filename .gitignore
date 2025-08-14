@@ -8,4 +8,9 @@ apps/web/dist
 # Misc
 .DS_Store
 
+# Python
+apps/api/.venv
+**/__pycache__/
+*.pyc
+
 
