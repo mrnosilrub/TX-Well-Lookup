@@ -1,6 +1,7 @@
 ---
 const title = 'TX Well Lookup';
 import Hero from '../components/Hero.astro';
+import ApiStatus from '../components/ApiStatus.astro';
 const base = (import.meta.env.PUBLIC_BASE_PATH || '/').replace(/\/?$/, '/');
 ---
 <!doctype html>
@@ -38,6 +39,7 @@ const base = (import.meta.env.PUBLIC_BASE_PATH || '/').replace(/\/?$/, '/');
     <main class="wrap" style="padding-block:24px">
       <div class="grid">
         <Hero />
+        <ApiStatus />
         <section class="card">
           <h3>What’s next</h3>
           <ol>
