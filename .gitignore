@@ -1,0 +1,11 @@
+# Node
+node_modules
+# Astro
+apps/web/.astro
+apps/web/dist
+# Logs
+*.log
+# Misc
+.DS_Store
+
+
