@@ -1,0 +1,7 @@
+id,county,total_depth_ft,aquifer,lat,lon
+GWDB-000001,Travis,410,Trinity,30.267200,-97.743100
+GWDB-000002,Harris,580,Gulf Coast,29.760400,-95.369800
+GWDB-000003,Dallas,460,Woodbine,32.776700,-96.797000
+GWDB-000004,Bexar,430,Edwards,29.424100,-98.493600
+GWDB-000005,Tarrant,390,Trinity,32.755500,-97.330800
+GWDB-000006,Williamson,520,Edwards,30.633300,-97.677000
