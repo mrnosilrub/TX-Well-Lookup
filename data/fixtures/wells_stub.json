@@ -1,0 +1,127 @@
+{
+  "count": 12,
+  "items": [
+    {
+      "id": "WELL-0001",
+      "owner_name": "Smith Farms",
+      "well_name": "Smith-1",
+      "county": "Travis",
+      "lat": 30.2672,
+      "lon": -97.7431,
+      "depth_ft": 180,
+      "date_completed": "2018-06-12"
+    },
+    {
+      "id": "WELL-0002",
+      "owner_name": "Lone Star Ranch",
+      "well_name": "LS-Alpha",
+      "county": "Harris",
+      "lat": 29.7604,
+      "lon": -95.3698,
+      "depth_ft": 220,
+      "date_completed": "2019-03-04"
+    },
+    {
+      "id": "WELL-0003",
+      "owner_name": "Metro Water Co",
+      "well_name": "MW-7",
+      "county": "Dallas",
+      "lat": 32.7767,
+      "lon": -96.797,
+      "depth_ft": 150,
+      "date_completed": "2020-11-19"
+    },
+    {
+      "id": "WELL-0004",
+      "owner_name": "Borderlands LLC",
+      "well_name": "BL-3",
+      "county": "El Paso",
+      "lat": 31.7619,
+      "lon": -106.485,
+      "depth_ft": 300,
+      "date_completed": "2017-02-08"
+    },
+    {
+      "id": "WELL-0005",
+      "owner_name": "River City Estates",
+      "well_name": "RCE-2",
+      "county": "Bexar",
+      "lat": 29.4241,
+      "lon": -98.4936,
+      "depth_ft": 200,
+      "date_completed": "2021-07-23"
+    },
+    {
+      "id": "WELL-0006",
+      "owner_name": "Panther Creek",
+      "well_name": "PC-9",
+      "county": "Tarrant",
+      "lat": 32.7555,
+      "lon": -97.3308,
+      "depth_ft": 175,
+      "date_completed": "2016-09-14"
+    },
+    {
+      "id": "WELL-0007",
+      "owner_name": "Round Rock ISD",
+      "well_name": "RR-Field-1",
+      "county": "Williamson",
+      "lat": 30.5083,
+      "lon": -97.6789,
+      "depth_ft": 160,
+      "date_completed": "2015-05-30"
+    },
+    {
+      "id": "WELL-0008",
+      "owner_name": "Collin Ag Coop",
+      "well_name": "CAC-4",
+      "county": "Collin",
+      "lat": 33.0198,
+      "lon": -96.6989,
+      "depth_ft": 140,
+      "date_completed": "2014-10-11"
+    },
+    {
+      "id": "WELL-0009",
+      "owner_name": "Rio Grande Orchards",
+      "well_name": "RGO-1",
+      "county": "Hidalgo",
+      "lat": 26.2034,
+      "lon": -98.23,
+      "depth_ft": 260,
+      "date_completed": "2022-01-09"
+    },
+    {
+      "id": "WELL-0010",
+      "owner_name": "Plains Cotton",
+      "well_name": "PC-2",
+      "county": "Lubbock",
+      "lat": 33.5779,
+      "lon": -101.8552,
+      "depth_ft": 240,
+      "date_completed": "2013-04-17"
+    },
+    {
+      "id": "WELL-0011",
+      "owner_name": "Gulf Coast Water",
+      "well_name": "GC-1",
+      "county": "Galveston",
+      "lat": 29.3013,
+      "lon": -94.7977,
+      "depth_ft": 130,
+      "date_completed": "2020-08-02"
+    },
+    {
+      "id": "WELL-0012",
+      "owner_name": "Waco Parks",
+      "well_name": "WP-6",
+      "county": "McLennan",
+      "lat": 31.5493,
+      "lon": -97.1467,
+      "depth_ft": 155,
+      "date_completed": "2012-12-05"
+    }
+  ]
+}
+
+
