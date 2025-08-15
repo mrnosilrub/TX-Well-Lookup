@@ -1,3 +1,18 @@
+dev:
+	docker compose up --build
+
+stop:
+	docker compose down
+
+db.shell:
+	docker exec -it txwell_db psql -U postgres -d txwell
+
+api.shell:
+	docker exec -it txwell_api /bin/sh
+
+seed.sample:
+	docker exec -it txwell_api python /app/data/scripts/seed_sdr_sample.py
+
 .PHONY: dev.web dev.api dev stop db.shell api.shell seed.sample
 
 # Start Astro web dev server on port 4321
