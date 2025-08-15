@@ -1,8 +1,10 @@
 <section class="card">
   <h3 style="margin-top:0">Search</h3>
-  <form id="search-form" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-    <input id="q" name="q" placeholder="Search wells..." style="flex:1;min-width:200px;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb" />
-    <button class="btn" type="submit">Search</button>
+  <form id="search-form" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+    <input id="q" name="q" placeholder="Search wells..." style="flex:1 1 220px;min-width:200px;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb" />
+    <input id="depthMin" name="depthMin" type="number" placeholder="Min depth (ft)" style="flex:0 0 160px;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb" />
+    <input id="depthMax" name="depthMax" type="number" placeholder="Max depth (ft)" style="flex:0 0 160px;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb" />
+    <button class="btn" type="submit" style="flex:0 0 auto">Search</button>
   </form>
   <div id="results" style="margin-top:12px"></div>
   <script is:inline>
@@ -10,13 +12,27 @@
     const results = document.getElementById('results');
     async function fetchItems() {
       try {
-        const res = await fetch('api/search.json', { cache: 'no-store' });
+        const api = (window.__tx_api || '').toString().trim();
+        const url = api ? `${api.replace(/\/?$/, '/') }v1/search` : 'api/search.json';
+        const res = await fetch(url, { cache: 'no-store' });
         if (!res.ok) throw new Error('bad status');
         const data = await res.json();
-        return Array.isArray(data.items) ? data.items : [];
+        const items = Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
+        return items;
       } catch {
         return [];
       }
+    }
+    function applyFilters(items) {
+      const q = (document.getElementById('q').value || '').toLowerCase();
+      const depthMin = parseFloat(document.getElementById('depthMin').value || '');
+      const depthMax = parseFloat(document.getElementById('depthMax').value || '');
+      return items.filter((it) => {
+        const matchesQ = !q || `${it.name} ${it.county}`.toLowerCase().includes(q);
+        const matchesMin = isNaN(depthMin) || (it.depth_ft ?? 0) >= depthMin;
+        const matchesMax = isNaN(depthMax) || (it.depth_ft ?? 0) <= depthMax;
+        return matchesQ && matchesMin && matchesMax;
+      });
     }
     function ensureMap(items) {
       if (window.__tx_map) {
@@ -30,6 +46,7 @@
       window.addEventListener('tx_map_ready', onReady);
     }
     function render(items) {
+      items = applyFilters(items);
       if (!items.length) {
         results.innerHTML = '<small>No results.</small>';
         ensureMap([]);

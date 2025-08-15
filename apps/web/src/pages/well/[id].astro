@@ -25,6 +25,8 @@ const title = `Well ${id}`;
       small{color:var(--muted)}
       .modal{position:fixed;inset:0;background:rgba(0,0,0,.3);display:none;align-items:center;justify-content:center}
       .modal > div{background:#fff;border-radius:12px;padding:20px;max-width:420px}
+      .chips{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+      .chip{background:#eef2ff;border:1px solid #c7d2fe;color:#312e81;border-radius:999px;padding:6px 10px;font-size:12px}
     </style>
   </head>
   <body>
@@ -40,8 +42,11 @@ const title = `Well ${id}`;
       {well ? (
         <section class="card">
           <h2>{well.name}</h2>
-          <p><small>ID: {well.id} • {well.county} County • Depth: {well.depth_ft} ft</small></p>
-          <div style="display:flex;gap:12px;align-items:center;margin-top:8px">
+          <div class="chips">
+            <span class="chip">County: {well.county}</span>
+            <span class="chip">Depth: {well.depth_ft} ft</span>
+          </div>
+          <div style="display:flex;gap:12px;align-items:center;margin-top:12px">
             <button id="btn-report" class="btn">Generate Report</button>
             <span id="report-status"><small>Idle</small></span>
           </div>
@@ -71,7 +76,6 @@ const title = `Well ${id}`;
       btn?.addEventListener('click', async () => {
         status.innerHTML = '<small>Requesting…</small>';
         await new Promise(r => setTimeout(r, 500));
-        // Randomly simulate 402
         if (Math.random() < 0.5) {
           status.innerHTML = '<small>Payment required (stub)</small>';
           showModal();
