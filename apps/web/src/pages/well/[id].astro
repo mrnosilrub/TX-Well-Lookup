@@ -8,6 +8,7 @@ const { id } = Astro.params;
 const base = (import.meta.env.PUBLIC_BASE_PATH || '/').replace(/\/?$/, '/');
 const well = stubWells.find((w) => w.id === id);
 const title = `Well ${id}`;
+const publicApi = import.meta.env.PUBLIC_API_URL || '';
 ---
 <!doctype html>
 <html lang="en">
@@ -41,7 +42,7 @@ const title = `Well ${id}`;
     </header>
     <main class="wrap" style="padding-block:24px">
       {well ? (
-        <section class="card">
+        <section class="card" data-api={publicApi}>
           <h2>{well.name}</h2>
           <div class="chips">
             <span class="chip">County: {well.county}</span>
@@ -75,22 +76,53 @@ const title = `Well ${id}`;
       const status = document.getElementById('report-status');
       const modal = document.getElementById('paywall');
       const close = document.getElementById('close-paywall');
+      const container = document.currentScript.closest('section');
+      const apiBase = (container?.dataset.api || '').toString().trim();
       function showModal(){ modal.style.display='flex'; }
       function hideModal(){ modal.style.display='none'; }
       close?.addEventListener('click', hideModal);
-      btn?.addEventListener('click', async () => {
-        status.innerHTML = '<small>Requesting…</small>';
-        await new Promise(r => setTimeout(r, 500));
-        if (Math.random() < 0.5) {
-          status.innerHTML = '<small>Payment required (stub)</small>';
-          showModal();
-          return;
+      async function postReport(){
+        const url = apiBase
+          ? new URL('v1/reports', apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
+          : new URL('/v1/reports', window.location.origin).toString();
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ well_id: "{id}" }) });
+        if (res.status === 402) throw new Error('402');
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        return data.report_id;
+      }
+      async function pollReport(reportId){
+        const url = apiBase
+          ? new URL(`v1/reports/${reportId}`, apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
+          : new URL(`/v1/reports/${reportId}`, window.location.origin).toString();
+        for (let i=0;i<10;i++){
+          const res = await fetch(url, { cache: 'no-store' });
+          if (res.ok){
+            const data = await res.json();
+            if (data && (data.pdf_url || data.zip_url)) return data;
+          }
+          await new Promise(r => setTimeout(r, 800));
         }
-        const reportId = Math.random().toString(36).slice(2, 9);
-        status.innerHTML = '<small>Generating…</small>';
-        await new Promise(r => setTimeout(r, 900));
-        const fakeUrl = new URL('fake/report.pdf', document.baseURI).toString();
-        status.innerHTML = `<small>Ready:</small> <a class="btn" href="${fakeUrl}">Download PDF</a>`;
+        throw new Error('timeout');
+      }
+      btn?.addEventListener('click', async () => {
+        try{
+          status.innerHTML = '<small>Requesting…</small>';
+          const reportId = await postReport();
+          status.innerHTML = '<small>Generating…</small>';
+          const data = await pollReport(reportId);
+          const pdfUrl = data.pdf_url ? new URL(data.pdf_url, document.baseURI).toString() : new URL('fake/report.pdf', document.baseURI).toString();
+          const zipUrl = data.zip_url ? new URL(data.zip_url, document.baseURI).toString() : '';
+          status.innerHTML = `<small>Ready:</small> <a class=\"btn\" href=\"${pdfUrl}\">PDF</a>${zipUrl ? ` <a class=\"btn\" href=\"${zipUrl}\">ZIP</a>` : ''}`;
+        } catch(e){
+          if ((e && e.message) === '402'){
+            status.innerHTML = '<small>Payment required</small>';
+            showModal();
+            return;
+          }
+          const fallback = new URL('fake/report.pdf', document.baseURI).toString();
+          status.innerHTML = `<small>Ready:</small> <a class=\"btn\" href=\"${fallback}\">PDF</a>`;
+        }
       });
     </script>
   </body>

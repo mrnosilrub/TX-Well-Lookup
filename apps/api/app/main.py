@@ -2,6 +2,7 @@ from typing import List, Dict, Any
 
 from fastapi import FastAPI
 from fastapi import HTTPException
+from fastapi import Header
 from fastapi.middleware.cors import CORSMiddleware
 from starlette import status
 from uuid import uuid4
@@ -15,7 +16,15 @@ from .models import WellReport
 import math
 from fastapi.responses import HTMLResponse, FileResponse
 from .security import sign_payload, verify_token
-from data.bundles.bundle_builder import build_bundle
+import json
+import csv
+import zipfile
+from pathlib import Path
+from io import StringIO
+try:
+    from data.bundles.bundle_builder import build_bundle as _external_build_bundle
+except Exception:  # pragma: no cover - dev fallback when data module not present
+    _external_build_bundle = None
 
 
 app = FastAPI(title="TX Well Lookup API", version="0.1.0")
@@ -107,12 +116,83 @@ def search_endpoint(q: str | None = None, county: str | None = None, limit: int 
 
 
 reports_store: Dict[str, Dict[str, Any]] = {}
+credits_store: Dict[str, int] = {}
+credit_grants: List[Dict[str, Any]] = []
+credit_spends: List[Dict[str, Any]] = []
+alerts_store: Dict[str, Dict[str, Any]] = {}
+
+
+def _get_user_id(x_user: str | None) -> str:
+    return x_user or "demo"
+
+
+def _dev_build_bundle(output_dir: str, lat: float, lon: float) -> Dict[str, str]:
+    base = Path(output_dir or ".reports").resolve()
+    base.mkdir(parents=True, exist_ok=True)
+    run_dir = base / f"r-{int(time.time())}"
+    run_dir.mkdir(parents=True, exist_ok=True)
+    # csv
+    csv_path = run_dir / "nearby.csv"
+    with csv_path.open("w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["name", "lat", "lon", "distance_m"]) 
+        writer.writerow(["Sample Well", f"{lat:.6f}", f"{lon:.6f}", "0"]) 
+    # geojson
+    gj_path = run_dir / "nearby.geojson"
+    gj = {
+        "type": "FeatureCollection",
+        "features": [
+            {
+                "type": "Feature",
+                "properties": {"name": "Sample Well"},
+                "geometry": {"type": "Point", "coordinates": [lon, lat]},
+            }
+        ],
+    }
+    gj_path.write_text(json.dumps(gj), encoding="utf-8")
+    # manifest
+    manifest_path = run_dir / "manifest.json"
+    manifest = {"generated_at": int(time.time()), "center": {"lat": lat, "lon": lon}}
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    # pdf (stub as text)
+    pdf_path = run_dir / "report.pdf"
+    pdf_path.write_bytes(f"Stub PDF for ({lat:.6f},{lon:.6f})\n".encode("utf-8"))
+    # zip bundle
+    zip_path = run_dir / "report.zip"
+    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+        zf.write(csv_path, arcname=csv_path.name)
+        zf.write(gj_path, arcname=gj_path.name)
+        zf.writestr("README.txt", "Stub bundle contents for local dev")
+    return {
+        "pdf": str(pdf_path),
+        "zip": str(zip_path),
+        "csv": str(csv_path),
+        "geojson": str(gj_path),
+        "manifest": str(manifest_path),
+    }
+
+
+def build_bundle(output_dir: str, lat: float, lon: float) -> Dict[str, str]:
+    if _external_build_bundle is not None:
+        try:
+            return _external_build_bundle(output_dir=output_dir, lat=lat, lon=lon)
+        except Exception:
+            pass
+    return _dev_build_bundle(output_dir=output_dir, lat=lat, lon=lon)
 
 
 @app.post("/v1/reports", status_code=status.HTTP_201_CREATED)
-def create_report(payload: Dict[str, Any] | None = None) -> Dict[str, str]:
+def create_report(payload: Dict[str, Any] | None = None, x_user: str | None = Header(default=None)) -> Dict[str, str]:
     # Create a report bundle immediately in dev and return downloadable URLs
     report_id = str(uuid4())
+    user_id = _get_user_id(x_user)
+    # Sprint 10: enforce credits
+    available = int(credits_store.get(user_id, 0))
+    if available <= 0:
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Insufficient credits")
+    # Reserve one credit
+    credits_store[user_id] = available - 1
+    credit_spends.append({"user_id": user_id, "report_id": report_id, "ts": time.time(), "amount": 1})
     lat = 30.2672
     lon = -97.7431
     if isinstance(payload, dict):
@@ -223,6 +303,82 @@ def proxy_signed_download(token: str):
     # Dev: redirect to fake path; prod would stream from S3/R2
     from fastapi.responses import RedirectResponse
     return RedirectResponse(url=f"/fake/{object_key}")
+
+
+# ===== Sprint 10: Billing (test mode) =====
+@app.post("/billing/checkout")
+def billing_checkout(credits: int = 1, x_user: str | None = Header(default=None)) -> Dict[str, Any]:
+    user_id = _get_user_id(x_user)
+    add = max(int(credits), 1)
+    credits_store[user_id] = credits_store.get(user_id, 0) + add
+    credit_grants.append({"user_id": user_id, "ts": time.time(), "amount": add, "source": "checkout_test"})
+    return {"status": "success", "granted": add, "credits_available": credits_store[user_id]}
+
+
+@app.post("/billing/webhook")
+def billing_webhook(event: Dict[str, Any]) -> Dict[str, Any]:
+    user_id = str(event.get("user_id", "demo"))
+    add = max(int(event.get("credits", 1)), 1)
+    credits_store[user_id] = credits_store.get(user_id, 0) + add
+    credit_grants.append({"user_id": user_id, "ts": time.time(), "amount": add, "source": "webhook_test"})
+    return {"ok": True}
+
+
+@app.get("/billing/credits")
+def billing_credits(x_user: str | None = Header(default=None)) -> Dict[str, Any]:
+    user_id = _get_user_id(x_user)
+    return {"user_id": user_id, "credits_available": credits_store.get(user_id, 0)}
+
+
+# ===== Sprint 10: Alerts CRUD =====
+@app.post("/v1/alerts", status_code=status.HTTP_201_CREATED)
+def create_alert(payload: Dict[str, Any], x_user: str | None = Header(default=None)) -> Dict[str, str]:
+    user_id = _get_user_id(x_user)
+    try:
+        lat = float(payload["lat"])
+        lon = float(payload["lon"])
+    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="lat/lon required")
+    alert_id = str(uuid4())
+    alert = {
+        "id": alert_id,
+        "user_id": user_id,
+        "lat": lat,
+        "lon": lon,
+        "radius_m": int(payload.get("radius_m", 1609)),
+        "email": payload.get("email"),
+        "webhook_url": payload.get("webhook_url"),
+        "status": "active",
+        "created_at": time.time(),
+    }
+    alerts_store[alert_id] = alert
+    return {"id": alert_id}
+
+
+@app.get("/v1/alerts")
+def list_alerts(x_user: str | None = Header(default=None)) -> Dict[str, Any]:
+    user_id = _get_user_id(x_user)
+    items = [a for a in alerts_store.values() if a.get("user_id") == user_id]
+    return {"items": items}
+
+
+@app.get("/v1/alerts/{alert_id}")
+def get_alert(alert_id: str, x_user: str | None = Header(default=None)) -> Dict[str, Any]:
+    user_id = _get_user_id(x_user)
+    alert = alerts_store.get(alert_id)
+    if not alert or alert.get("user_id") != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
+    return alert
+
+
+@app.delete("/v1/alerts/{alert_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_alert(alert_id: str, x_user: str | None = Header(default=None)) -> None:
+    user_id = _get_user_id(x_user)
+    alert = alerts_store.get(alert_id)
+    if not alert or alert.get("user_id") != user_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alert not found")
+    del alerts_store[alert_id]
+    return None
 
 
 @app.get("/v1/wells/{well_id}")
