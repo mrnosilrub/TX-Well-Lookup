@@ -10,9 +10,7 @@
     const results = document.getElementById('results');
     async function fetchItems() {
       try {
-        const base = (window.__tx_base || '/').toString().replace(/\/?$/, '/');
-        const url = new URL(`${base}api/search.json`, window.location.origin);
-        const res = await fetch(url.toString(), { cache: 'no-store' });
+        const res = await fetch('api/search.json', { cache: 'no-store' });
         if (!res.ok) throw new Error('bad status');
         const data = await res.json();
         return Array.isArray(data.items) ? data.items : [];
