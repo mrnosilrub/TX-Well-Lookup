@@ -10,7 +10,9 @@ jobs:
   web-build-pr:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    environment: staging
+    permissions:
+      contents: read
+      actions: write
     defaults:
       run:
         working-directory: apps/web
@@ -29,7 +31,9 @@ jobs:
   web-build-main:
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: production
+    permissions:
+      contents: read
+      actions: write
     defaults:
       run:
         working-directory: apps/web
