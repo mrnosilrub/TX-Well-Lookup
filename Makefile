@@ -1,4 +1,4 @@
-.PHONY: dev.web dev.api
+.PHONY: dev.web dev.api dev stop db.shell api.shell
 
 # Start Astro web dev server on port 4321
 dev.web:
@@ -14,5 +14,17 @@ dev.api:
 	else \
 		echo "API not scaffolded yet. See docs/sprints/sprint2_api_and_db_shell.md"; \
 	fi
+
+dev:
+	docker compose up --build
+
+stop:
+	docker compose down -v
+
+db.shell:
+	docker compose exec -it db psql -U postgres -d txwl
+
+api.shell:
+	docker compose exec -it api /bin/sh
 
 
