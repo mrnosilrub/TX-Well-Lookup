@@ -10,6 +10,15 @@ npm run dev
 # open http://localhost:4321
 ```
 
+### Make targets
+```bash
+# run web locally
+make dev.web
+
+# run API locally (after Sprint 2 scaffolds FastAPI)
+make dev.api
+```
+
 ## Deploy to GitHub Pages
 1. Enable **Pages → Build & Deployment → GitHub Actions** in repo settings.
 2. Push `main`. The action in `.github/workflows/deploy-pages.yml` will publish `apps/web/dist`.
