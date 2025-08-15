@@ -77,9 +77,16 @@ STUB_ITEMS: List[Dict[str, Any]] = [
 
 
 @app.get("/v1/search")
-def search_stub() -> Dict[str, List[Dict[str, Any]]]:
+def search_stub(q: str | None = None) -> Dict[str, List[Dict[str, Any]]]:
     # Sprint 3: mirror frontend stub shape: { items: [...] }
-    return {"items": STUB_ITEMS}
+    items = STUB_ITEMS
+    if q:
+        query = q.lower()
+        items = [
+            it for it in STUB_ITEMS
+            if query in it["name"].lower() or query in it["county"].lower()
+        ]
+    return {"items": items}
 
 
 reports_store: Dict[str, Dict[str, Any]] = {}
@@ -102,4 +109,18 @@ def get_report_stub(report_id: str) -> Dict[str, str]:
         # For a very simple stub, still return a fixed URL to keep the flow uncomplicated
         return {"pdf_url": "/fake/report.pdf"}
     return {"pdf_url": report.get("pdf_url", "/fake/report.pdf")}
+
+
+@app.get("/v1/wells/{well_id}")
+def get_well_by_id(well_id: str) -> Dict[str, Any]:
+    for it in STUB_ITEMS:
+        if it["id"] == well_id:
+            # minimal detail payload for Sprint 5; DB-backed in Sprint 6
+            return {
+                **it,
+                "documents": [
+                    {"title": "Well Info Sheet", "url": "/fake/docs/well-info.pdf"}
+                ],
+            }
+    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Well not found")
 
