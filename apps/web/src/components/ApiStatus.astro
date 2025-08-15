@@ -1,10 +1,11 @@
 <section class="card">
   <h3>API status</h3>
   <p id="api-status" style="margin:0"><small>API: checking…</small></p>
-  <script>
+  <script is:inline>
+    const base = (window.__tx_base || '/').toString().replace(/\/?$/, '/');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 1500);
-    fetch('/health', { signal: controller.signal, cache: 'no-store' })
+    fetch(`${base}health`, { signal: controller.signal, cache: 'no-store' })
       .then((r) => r.ok ? r.json().catch(() => ({ ok: false })) : { ok: false })
       .then((data) => {
         const el = document.getElementById('api-status');
