@@ -63,4 +63,9 @@ ingest.rrc:
 	docker compose exec -T -e DATABASE_URL="postgresql://postgres:postgres@db:5432/txwl" api \
 		python -c "import sys; sys.path.append('/app'); from data.sources.rrc_permits import upsert_permits_from_csv; from data.sources.rrc_wellbores import upsert_wellbores_from_csv; import os; db=os.environ.get('DATABASE_URL'); print('permits:', upsert_permits_from_csv('/app/data/fixtures/rrc_permits.csv', db)); print('wellbores:', upsert_wellbores_from_csv('/app/data/fixtures/rrc_wellbores.csv', db))"
 
+# Build a local report bundle in .reports/
+bundle.local:
+	docker compose exec -T -e DATABASE_URL="postgresql://postgres:postgres@db:5432/txwl" api \
+		python -c "import sys; sys.path.append('/app'); from data.bundles.bundle_builder import build_bundle; print(build_bundle('/app/.reports', lat=30.2672, lon=-97.7431))"
+
 

@@ -12,6 +12,7 @@ from sqlalchemy import text
 from .db import get_db_session
 from .models import WellReport
 import math
+from fastapi.responses import HTMLResponse
 
 
 app = FastAPI(title="TX Well Lookup API", version="0.1.0")
@@ -106,22 +107,68 @@ reports_store: Dict[str, Dict[str, Any]] = {}
 
 
 @app.post("/v1/reports", status_code=status.HTTP_201_CREATED)
-def create_report_stub(payload: Dict[str, Any] | None = None) -> Dict[str, str]:
-    # Sprint 4: randomly simulate 402 Payment Required (no credits)
-    if random.random() < 0.3:
-        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Insufficient credits")
+def create_report(payload: Dict[str, Any] | None = None) -> Dict[str, str]:
+    # Sprint 9: create a job and return an ID. In dev, we mark it ready immediately.
     report_id = str(uuid4())
-    reports_store[report_id] = {"status": "ready", "pdf_url": "/fake/report.pdf"}
+    well_id = None
+    if isinstance(payload, dict):
+        well_id = payload.get("well_id")
+    reports_store[report_id] = {
+        "status": "ready",
+        "pdf_url": "/fake/report.pdf",
+        "zip_url": "/fake/report.zip",
+        "well_id": well_id,
+    }
     return {"report_id": report_id}
 
 
 @app.get("/v1/reports/{report_id}")
-def get_report_stub(report_id: str) -> Dict[str, str]:
+def get_report(report_id: str) -> Dict[str, Any]:
     report = reports_store.get(report_id)
     if not report:
-        # For a very simple stub, still return a fixed URL to keep the flow uncomplicated
-        return {"pdf_url": "/fake/report.pdf"}
-    return {"pdf_url": report.get("pdf_url", "/fake/report.pdf")}
+        # Minimal empty job if unknown
+        return {"status": "pending"}
+    return {
+        "status": report.get("status", "pending"),
+        "pdf_url": report.get("pdf_url"),
+        "zip_url": report.get("zip_url"),
+    }
+
+
+@app.get("/v1/reports/{report_id}/html", response_class=HTMLResponse)
+def get_report_html(report_id: str) -> HTMLResponse:
+    report = reports_store.get(report_id) or {}
+    well_id = report.get("well_id") or "—"
+    html = f"""
+    <!doctype html>
+    <html lang=\"en\">
+      <head>
+        <meta charset=\"utf-8\" />
+        <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\" />
+        <title>Well Report {report_id}</title>
+        <style>
+          body {{ font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color:#0b0b0c; }}
+          .wrap {{ max-width: 800px; margin: 24px auto; padding: 0 16px; }}
+          .card {{ border:1px solid #e5e7eb; border-radius: 12px; padding:16px; }}
+          h1 {{ margin: 0 0 8px 0; }}
+          small {{ color:#6b7280; }}
+          table {{ width:100%; border-collapse: collapse; margin-top:12px; }}
+          td,th {{ border:1px solid #e5e7eb; padding:8px; text-align:left; }}
+        </style>
+      </head>
+      <body>
+        <div class=\"wrap\">
+          <h1>Well Report</h1>
+          <div class=\"card\">
+            <div><strong>Report ID:</strong> {report_id}</div>
+            <div><strong>Well ID:</strong> {well_id}</div>
+            <div style=\"margin-top:8px\"><small>Stub HTML for printing. Sprint 9 will render a real template later.</small></div>
+          </div>
+        </div>
+      </body>
+    </html>
+    """
+    return HTMLResponse(content=html)
 
 
 @app.get("/v1/wells/{well_id}")

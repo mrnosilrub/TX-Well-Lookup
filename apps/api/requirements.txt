@@ -9,4 +9,5 @@ uvicorn[standard]
 pydantic
 sqlalchemy>=2.0
 psycopg2-binary
+fpdf2
 
