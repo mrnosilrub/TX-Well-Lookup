@@ -1,0 +1,87 @@
+---
+interface Props { lat: number; lon: number; radius_m?: number }
+const { lat, lon, radius_m = 1609 } = Astro.props as Props;
+const publicApi = import.meta.env.PUBLIC_API_URL || '';
+---
+<section class="card" data-api={publicApi}>
+  <h3 style="margin-top:0">Nearby oil/gas</h3>
+  <label style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+    <input id="toggle-energy" type="checkbox" />
+    <span>Show nearby oil/gas pins</span>
+  </label>
+  <div id="energy-count" style="margin-bottom:8px"><small>Off</small></div>
+  <div id="energy-map" style="height:260px;border-radius:12px;overflow:hidden;background:#eef2ff"></div>
+
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
+  <script is:inline>
+    const container = document.currentScript.closest('section');
+    const apiBase = (container?.dataset.api || '').toString().trim();
+    const mapEl = document.getElementById('energy-map');
+    const countEl = document.getElementById('energy-count');
+    const toggleEl = document.getElementById('toggle-energy');
+    let map;
+    let markers = [];
+    function setCount(n){ countEl.innerHTML = `<small>${n > 0 ? `Nearby permits: ${n}` : 'Off'}</small>` }
+    function clearMarkers(){ markers.forEach(m=>m.remove()); markers=[]; }
+    function ensureMap(){
+      if (map) return map;
+      const center = [{lat}, {lon}];
+      map = L.map(mapEl, { zoomControl: true }).setView(center, 11);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19 }).addTo(map);
+      L.circle(center, { radius: {radius_m}, color: '#0ea5e9', weight: 1 }).addTo(map);
+      return map;
+    }
+    async function fetchNearby(){
+      const params = new URLSearchParams({ lat: String({lat}), lon: String({lon}), radius_m: String({radius_m}) });
+      const primary = apiBase
+        ? new URL(`v1/energy/nearby?${params.toString()}`, apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
+        : new URL(`/v1/energy/nearby?${params.toString()}`, window.location.origin).toString();
+      try {
+        let res = await fetch(primary, { cache: 'no-store' });
+        if (!res.ok) throw new Error('bad status');
+        const data = await res.json();
+        if (Array.isArray(data.items)) return data.items;
+      } catch (e) {
+        // stub fallback: generate a few pins near the well
+        const baseLat = {lat};
+        const baseLon = {lon};
+        return [
+          { api14: '42-001-00001', operator: 'Acme Oil', status: 'PERMIT', permit_date: '2024-06-01', lat: baseLat + 0.01, lon: baseLon + 0.01, distance_m: 1500 },
+          { api14: '42-001-00002', operator: 'Prime Energy', status: 'ACTIVE', permit_date: '2023-11-12', lat: baseLat - 0.008, lon: baseLon + 0.006, distance_m: 1200 },
+          { api14: '42-001-00003', operator: 'Lone Star', status: 'PERMIT', permit_date: '2024-01-20', lat: baseLat + 0.006, lon: baseLon - 0.009, distance_m: 1800 },
+        ];
+      }
+      return [];
+    }
+    async function render(){
+      clearMarkers();
+      if (!toggleEl.checked){ setCount(0); return; }
+      ensureMap();
+      setCount('Loading…');
+      const items = await fetchNearby();
+      items.forEach(it => {
+        const m = L.marker([it.lat, it.lon]).addTo(map);
+        m.bindPopup(`<strong>${it.operator || 'Operator'}</strong><br/>${it.status || ''}`);
+        markers.push(m);
+      });
+      setCount(items.length);
+      if (items.length){
+        const bounds = L.latLngBounds(items.map(it => [it.lat, it.lon]));
+        map.fitBounds(bounds.pad(0.2));
+      }
+    }
+    toggleEl.addEventListener('change', render);
+  </script>
+</section>
+
+

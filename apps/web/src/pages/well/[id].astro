@@ -1,5 +1,6 @@
 ---
 import { wells as stubWells } from '../../lib/stubWells';
+import NearbyEnergy from '../../components/NearbyEnergy.astro';
 export function getStaticPaths() {
   return stubWells.map((w) => ({ params: { id: w.id } }));
 }
@@ -54,6 +55,7 @@ const title = `Well ${id}`;
             <span id="report-status"><small>Idle</small></span>
           </div>
         </section>
+        <NearbyEnergy lat={well.lat} lon={well.lon} />
       ) : (
         <section class="card"><p>Well not found.</p></section>
       )}
