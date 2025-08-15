@@ -8,6 +8,7 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: txwl
+    command: ["postgres", "-c", "log_min_duration_statement=500", "-c", "shared_buffers=256MB", "-c", "work_mem=16MB"]
     ports:
       - "5432:5432"
     volumes:
