@@ -16,4 +16,7 @@ This directory will house the data ingestion and transformation code used to pow
 2. Draft ETL interfaces for SDR and GWDB loaders.
 3. Keep this layer decoupled from runtime until DB/API are introduced (Sprint 3+).
 
+## Current Fixtures
+
+- `fixtures/wells_stub.json` — Canonical stub used by the web stub endpoint and the API stub to ensure consistent results across layers.
 
