@@ -6,13 +6,15 @@ on:
     branches: [ main ]
 permissions:
   contents: read
+concurrency:
+  group: ci-web-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   web-build-pr:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: write
     defaults:
       run:
         working-directory: apps/web
@@ -33,7 +35,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      actions: write
     defaults:
       run:
         working-directory: apps/web

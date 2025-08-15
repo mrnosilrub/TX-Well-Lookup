@@ -13,4 +13,9 @@ apps/api/.venv
 **/__pycache__/
 *.pyc
 
+# Local env files (never commit)
+.env
+.env.*
+apps/**/.env*
+
 

@@ -43,4 +43,18 @@ Decide platforms, create accounts, and prepare secure access for later automatio
 - Confirm MFA enforced for owners
 - Confirm at least one non-owner can access via role-based policy
 
+#### For you — simple checklist (no technical steps)
+- Pick providers for:
+  - Database, API runtime, Object storage, DNS/TLS
+  - Optional now: Billing (Stripe), Notifications (email or Slack)
+- Create accounts using your business email and enable billing.
+- Turn on MFA for your account(s).
+- Add one backup teammate with MFA to each provider.
+- Keep any API keys safe (password manager). Do not put them in GitHub.
+
+Where to record choices:
+- Either tell me the provider names and I will fill them in, or add them to `docs/infra/providers.md` (simple tables to fill in).
+
+You do not need to use the command line for this sprint.
+
 

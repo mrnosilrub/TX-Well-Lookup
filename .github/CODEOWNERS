@@ -1,0 +1,12 @@
+# Code owners for review enforcement
+# Adjust handles to your GitHub usernames or teams (e.g., @org/devops)
+
+# Default owners
+* @mrnosilrub
+
+# DevOps workflows and infra docs
+.github/workflows/* @mrnosilrub
+docs/infra/** @mrnosilrub
+SECURITY.md @mrnosilrub
+
+
