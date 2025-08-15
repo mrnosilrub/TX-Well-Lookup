@@ -44,7 +44,7 @@
         li.style.padding = '10px 0';
         li.style.borderBottom = '1px solid #eee';
         li.innerHTML = `
-          <strong>${it.name}</strong>
+          <strong><a href="well/${it.id}/">${it.name}</a></strong>
           <div><small>${it.county} County • Depth: ${it.depth_ft} ft</small></div>
           <div style="margin-top:6px"><button data-id="${it.id}" class="btn" style="padding:6px 10px">Fly to</button></div>
         `;
