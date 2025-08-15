@@ -31,7 +31,7 @@
         clearMarkers();
         const bounds = L.latLngBounds();
         items.forEach((it) => {
-          const marker = L.marker([it.lat, it.lon]).addTo(map);
+          const marker = L.marker([it.lat, it.lon], { title: it.name }).addTo(map);
           marker.bindPopup(`<strong>${it.name}</strong><br/>${it.county} County`);
           markersById.set(it.id, marker);
           bounds.extend([it.lat, it.lon]);
