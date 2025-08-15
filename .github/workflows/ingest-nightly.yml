@@ -32,6 +32,7 @@ jobs:
           psql postgresql://postgres:postgres@localhost:5432/txwl -f db/init/01_postgis.sql
           psql postgresql://postgres:postgres@localhost:5432/txwl -f db/init/02_gwdb.sql
           psql postgresql://postgres:postgres@localhost:5432/txwl -f db/init/03_well_reports_fix.sql
+          psql postgresql://postgres:postgres@localhost:5432/txwl -f db/init/04_indexes.sql
       - name: Install ingest deps
         run: |
           python -m pip install --upgrade pip
