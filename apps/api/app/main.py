@@ -11,6 +11,7 @@ from sqlalchemy import text
 
 from .db import get_db_session
 from .models import WellReport
+import math
 
 
 app = FastAPI(title="TX Well Lookup API", version="0.1.0")
@@ -173,4 +174,39 @@ def get_well_by_id(well_id: str) -> Dict[str, Any]:
             "gwdb_depth_ft": row.get("gwdb_depth_ft"),
             "documents": [{"title": "Well Info Sheet", "url": "/fake/docs/well-info.pdf"}],
         }
+
+
+@app.get("/v1/energy/nearby")
+def energy_nearby(lat: float, lon: float, radius_m: int = 1609,
+                  status: str | None = None, operator: str | None = None,
+                  limit: int = 50) -> Dict[str, Any]:
+    # If no DB configured, return empty stub
+    if not os.getenv("DATABASE_URL"):
+        return {"count": 0, "items": []}
+    with get_db_session() as session:
+        if session is None:
+            return {"count": 0, "items": []}
+        where = [
+            "ST_DWithin(geom, ST_SetSRID(ST_MakePoint(:lon,:lat),4326)::geography, :radius)"
+        ]
+        params: Dict[str, Any] = {"lat": lat, "lon": lon, "radius": radius_m}
+        if status:
+            where.append("status = :status")
+            params["status"] = status
+        if operator:
+            where.append("operator ILIKE :operator")
+            params["operator"] = f"%{operator}%"
+        sql = """
+        SELECT api14, operator, status, permit_date,
+               ST_Y(geom) as lat, ST_X(geom) as lon,
+               ST_Distance(geom, ST_SetSRID(ST_MakePoint(:lon,:lat),4326)::geography) as distance_m
+        FROM rrc_permits
+        WHERE {where}
+        ORDER BY distance_m ASC
+        LIMIT :limit
+        """.format(where=" AND ".join(where))
+        params["limit"] = min(max(limit, 1), 200)
+        rows = session.execute(text(sql), params).mappings().all()
+        items = [dict(r) for r in rows]
+        return {"count": len(items), "items": items}
 
