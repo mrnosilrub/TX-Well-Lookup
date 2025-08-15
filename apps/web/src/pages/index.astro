@@ -26,8 +26,8 @@ const base = (import.meta.env.PUBLIC_BASE_PATH || '/').replace(/\/?$/, '/');
     </style>
   </head>
   <body>
-    <script type="module" is:inline>
-      window.__tx_base = import.meta.env.BASE_URL;
+    <script is:inline>
+      window.__tx_base = "{base}";
     </script>
     <header>
       <div class="wrap" style="display:flex;gap:12px;align-items:center;">
