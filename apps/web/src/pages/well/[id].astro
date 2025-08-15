@@ -45,6 +45,9 @@ const title = `Well ${id}`;
           <div class="chips">
             <span class="chip">County: {well.county}</span>
             <span class="chip">Depth: {well.depth_ft} ft</span>
+            {well.aquifer && <span class="chip">Aquifer: {well.aquifer}</span>}
+            {well.gcd && <span class="chip">GCD: {well.gcd}</span>}
+            {well.gwdb_depth_ft && <span class="chip">GWDB: {well.gwdb_depth_ft} ft</span>}
           </div>
           <div style="display:flex;gap:12px;align-items:center;margin-top:12px">
             <button id="btn-report" class="btn">Generate Report</button>

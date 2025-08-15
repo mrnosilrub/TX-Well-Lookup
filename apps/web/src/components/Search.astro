@@ -79,9 +79,11 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
         const li = document.createElement('li');
         li.style.padding = '10px 0';
         li.style.borderBottom = '1px solid #eee';
+        const gwdb = it.gwdb_depth_ft ? `<span class="chip" style="background:#ecfeff;border:1px solid #a5f3fc;color:#083344;border-radius:999px;padding:2px 8px;margin-left:6px;font-size:11px">GWDB</span>` : '';
         li.innerHTML = `
           <strong><a href="well/${it.id}/">${it.name}</a></strong>
-          <div><small>${it.county} County • Depth: ${it.depth_ft} ft</small></div>
+          ${gwdb}
+          <div><small>${it.county} County • Depth: ${it.depth_ft} ft${it.gwdb_depth_ft ? ` • GWDB: ${it.gwdb_depth_ft} ft` : ''}${it.aquifer ? ` • Aquifer: ${it.aquifer}` : ''}${it.gcd ? ` • GCD: ${it.gcd}` : ''}</small></div>
           <div style="margin-top:6px"><button data-id="${it.id}" class="btn" style="padding:6px 10px">Fly to</button></div>
         `;
         ul.appendChild(li);
