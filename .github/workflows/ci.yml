@@ -7,8 +7,29 @@ on:
 permissions:
   contents: read
 jobs:
-  web-build:
+  web-build-pr:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    environment: staging
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: apps/web/package-lock.json
+      - name: Install deps
+        run: npm ci
+      - name: Build
+        run: npm run build
+
+  web-build-main:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: production
     defaults:
       run:
         working-directory: apps/web
