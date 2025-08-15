@@ -1,7 +1,11 @@
 from typing import List, Dict, Any
 
 from fastapi import FastAPI
+from fastapi import HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from starlette import status
+from uuid import uuid4
+import random
 
 
 app = FastAPI(title="TX Well Lookup API", version="0.1.0")
@@ -76,4 +80,26 @@ STUB_ITEMS: List[Dict[str, Any]] = [
 def search_stub() -> Dict[str, List[Dict[str, Any]]]:
     # Sprint 3: mirror frontend stub shape: { items: [...] }
     return {"items": STUB_ITEMS}
+
+
+reports_store: Dict[str, Dict[str, Any]] = {}
+
+
+@app.post("/v1/reports", status_code=status.HTTP_201_CREATED)
+def create_report_stub(payload: Dict[str, Any] | None = None) -> Dict[str, str]:
+    # Sprint 4: randomly simulate 402 Payment Required (no credits)
+    if random.random() < 0.3:
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail="Insufficient credits")
+    report_id = str(uuid4())
+    reports_store[report_id] = {"status": "ready", "pdf_url": "/fake/report.pdf"}
+    return {"report_id": report_id}
+
+
+@app.get("/v1/reports/{report_id}")
+def get_report_stub(report_id: str) -> Dict[str, str]:
+    report = reports_store.get(report_id)
+    if not report:
+        # For a very simple stub, still return a fixed URL to keep the flow uncomplicated
+        return {"pdf_url": "/fake/report.pdf"}
+    return {"pdf_url": report.get("pdf_url", "/fake/report.pdf")}
 
