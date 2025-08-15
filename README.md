@@ -48,5 +48,6 @@ Use feature branches (`feat/...`) + PRs. Keep env values out of the repo.
 
 ## Infra
 - See `docs/infra/PLAN.md` for the deployment and environment plan (DB, storage, runners).
+- See `docs/infra/CDN_PLAN.md` for CDN and cache-busting strategy.
 
 
