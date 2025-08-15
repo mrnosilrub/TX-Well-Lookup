@@ -208,7 +208,8 @@ def create_report(payload: Dict[str, Any] | None = None, x_user: str | None = He
                     lon = float(it.get("lon", lon))
                     break
 
-    out = build_bundle(output_dir="/app/.reports", lat=lat, lon=lon)
+    # Write artifacts to a local folder in dev
+    out = build_bundle(output_dir=".reports", lat=lat, lon=lon)
 
     reports_store[report_id] = {
         "status": "ready",
