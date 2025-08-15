@@ -43,7 +43,6 @@ Requires DATABASE_URL env var or use docker-compose service environment inside t
 Usage:
   python data/scripts/seed_sdr_sample.py data/fixtures/sdr_sample.csv
 """
-from __future__ import annotations
 
 import csv
 import os

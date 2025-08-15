@@ -5,7 +5,6 @@ Generate a synthetic SDR sample CSV with >=200 rows across >=5 counties.
 Usage:
   python data/scripts/generate_sdr_sample.py data/fixtures/sdr_sample.csv
 """
-from __future__ import annotations
 
 import csv
 import os
@@ -47,9 +46,14 @@ def main() -> int:
         w.writerow(["id", "owner_name", "address", "county", "lat", "lon", "depth_ft", "date_completed"])
         seq = 1
         for county, base_lat, base_lon in counties:
-            for _ in range(rows_per_county):
-                lat = base_lat + random.uniform(-0.2, 0.2)
-                lon = base_lon + random.uniform(-0.2, 0.2)
+            for j in range(rows_per_county):
+                # Ensure first row per county matches the base lat/lon exactly
+                if j == 0:
+                    lat = base_lat
+                    lon = base_lon
+                else:
+                    lat = base_lat + random.uniform(-0.2, 0.2)
+                    lon = base_lon + random.uniform(-0.2, 0.2)
                 depth = random.randint(100, 700)
                 owner = random.choice([
                     "Smith Farms", "River City Estates", "Metro Water Co", "Hill Country Ranch",
