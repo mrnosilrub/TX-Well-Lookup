@@ -13,6 +13,10 @@ export default {
           target: 'http://localhost:8000',
           changeOrigin: true,
         },
+        '/v1': {
+          target: 'http://localhost:8000',
+          changeOrigin: true,
+        },
       },
     },
   },

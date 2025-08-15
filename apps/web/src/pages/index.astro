@@ -5,6 +5,7 @@ import ApiStatus from '../components/ApiStatus.astro';
 import Search from '../components/Search.astro';
 import Map from '../components/Map.astro';
 const base = (import.meta.env.PUBLIC_BASE_PATH || '/').replace(/\/?$/, '/');
+const apiUrl = import.meta.env.PUBLIC_API_URL || '';
 ---
 <!doctype html>
 <html lang="en">
@@ -27,6 +28,9 @@ const base = (import.meta.env.PUBLIC_BASE_PATH || '/').replace(/\/?$/, '/');
     </style>
   </head>
   <body>
+    <script is:inline>
+      window.__tx_api = "{apiUrl}";
+    </script>
     <header>
       <div class="wrap" style="display:flex;gap:12px;align-items:center;">
         <strong>TX Well Lookup</strong>
