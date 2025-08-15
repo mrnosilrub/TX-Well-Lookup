@@ -1,3 +1,39 @@
+import csv
+import os
+import psycopg2
+
+DB_URL = os.getenv('DB_URL_PSY', 'postgresql://postgres:postgres@localhost:5432/txwell')
+CSV_PATH = os.getenv('CSV_PATH', '/app/data/fixtures/sdr_sample.csv')
+
+def main() -> None:
+    conn = psycopg2.connect(DB_URL)
+    conn.autocommit = True
+    cur = conn.cursor()
+    with open(CSV_PATH, newline='') as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            lat = float(row['lat'])
+            lon = float(row['lon'])
+            cur.execute(
+                """
+                INSERT INTO well_reports (id, name, county, depth_ft, lat, lon, geom)
+                VALUES (%s, %s, %s, %s, %s, %s, ST_SetSRID(ST_MakePoint(%s, %s), 4326)::geography)
+                ON CONFLICT (id) DO UPDATE SET
+                  name = EXCLUDED.name,
+                  county = EXCLUDED.county,
+                  depth_ft = EXCLUDED.depth_ft,
+                  lat = EXCLUDED.lat,
+                  lon = EXCLUDED.lon,
+                  geom = EXCLUDED.geom
+                """,
+                [row['id'], row['name'], row['county'], int(row['depth_ft']), lat, lon, lon, lat]
+            )
+    cur.close()
+    conn.close()
+
+if __name__ == '__main__':
+    main()
+
 #!/usr/bin/env python3
 """
 Seed SDR sample CSV into the database's well_reports table.

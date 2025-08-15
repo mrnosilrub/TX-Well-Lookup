@@ -1,3 +1,10 @@
+id,name,county,lat,lon,depth_ft
+S-0001,Sample Well 1,Travis,30.2672,-97.7431,420
+S-0002,Sample Well 2,Hays,29.9996,-98.1029,350
+S-0003,Sample Well 3,Williamson,30.5060,-97.8203,500
+S-0004,Sample Well 4,Harris,29.7604,-95.3698,600
+S-0005,Sample Well 5,Dallas,32.7767,-96.7970,470
+S-0006,Sample Well 6,Bexar,29.4241,-98.4936,440
 id,owner_name,address,county,lat,lon,depth_ft,date_completed
 SDR-000001,Hill Country Ranch,3757 Oak Ave,Travis,30.322971,-97.933096,381,2014-04-19
 SDR-000002,Plains Cotton,620 Main St,Travis,30.337880,-97.586228,189,2014-02-06
