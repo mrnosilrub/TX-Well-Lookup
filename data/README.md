@@ -20,3 +20,7 @@ This directory will house the data ingestion and transformation code used to pow
 
 - `fixtures/wells_stub.json` — Canonical stub used by the web stub endpoint and the API stub to ensure consistent results across layers.
 
+## Plans & Specs
+
+- See `ETL_PLAN.md` for Sprint 5 ingest plan and expected schemas (SDR, GWDB, RRC).
+
