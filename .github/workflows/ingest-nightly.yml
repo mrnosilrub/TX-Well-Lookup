@@ -1,0 +1,43 @@
+name: Ingest Nightly (Sprint 7)
+on:
+  schedule:
+    - cron: '17 8 * * *' # daily at 08:17 UTC
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+permissions:
+  contents: read
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgis/postgis:15-3.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: txwl
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d txwl" --health-interval 5s --health-timeout 5s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Init DB
+        run: |
+          sudo apt-get update && sudo apt-get install -y postgresql-client
+          psql postgresql://postgres:postgres@localhost:5432/txwl -f db/init/01_postgis.sql
+      - name: Install ingest deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install psycopg2-binary
+      - name: Run nightly snapshots
+        env:
+          DATABASE_URL: postgresql://postgres:postgres@localhost:5432/txwl
+        run: |
+          python data/jobs/nightly_snapshots.py
+
+
