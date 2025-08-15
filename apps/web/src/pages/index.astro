@@ -12,6 +12,7 @@ const base = (import.meta.env.PUBLIC_BASE_PATH || '/').replace(/\/?$/, '/');
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{title}</title>
+    <base href={base} />
     <style>
       :root { --ink:#0b0b0c; --bg:#f6f7f9; --card:#fff; --muted:#6b7280; }
       html,body{height:100%} body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif}
