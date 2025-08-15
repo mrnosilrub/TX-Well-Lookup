@@ -50,4 +50,11 @@ seed.sample:
 		python /app/data/scripts/seed_sdr_sample.py /app/data/fixtures/sdr_sample.csv || \
 		echo "Start docker compose (make dev) to ensure DB is available, then retry."
 
+# Generate GWDB sample and run nightly snapshots (load + link)
+ingest.nightly:
+	python3 data/scripts/generate_gwdb_sample.py data/fixtures/gwdb_sample.csv
+	docker compose exec -T -e DATABASE_URL="postgresql://postgres:postgres@db:5432/txwl" api \
+		python -c "import sys; sys.path.append('/app'); from data.jobs.nightly_snapshots import main; import os; os.environ['DATABASE_URL']=os.environ.get('DATABASE_URL'); import sys; sys.exit(main())" || \
+		echo "Ensure containers are up with 'make dev' before running nightly."
+
 
