@@ -1,0 +1,111 @@
+---
+import fs from 'node:fs';
+import path from 'node:path';
+const { id } = Astro.params;
+const title = `Well ${id}`;
+const base = (import.meta.env.PUBLIC_BASE_PATH || '/').replace(/\/?$/, '/');
+
+function loadStubItems() {
+  try {
+    const fixturePath = path.resolve(process.cwd(), '..', '..', 'data', 'fixtures', 'wells_stub.json');
+    const fileContents = fs.readFileSync(fixturePath, 'utf-8');
+    const parsed = JSON.parse(fileContents);
+    return Array.isArray(parsed?.items) ? parsed.items : Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+const items = loadStubItems();
+const well = items.find((w) => w.id === id);
+export async function getStaticPaths() {
+  try {
+    const fixturePath = path.resolve(process.cwd(), '..', '..', 'data', 'fixtures', 'wells_stub.json');
+    const fileContents = fs.readFileSync(fixturePath, 'utf-8');
+    const parsed = JSON.parse(fileContents);
+    const items = Array.isArray(parsed?.items) ? parsed.items : Array.isArray(parsed) ? parsed : [];
+    return items.map((w) => ({ params: { id: w.id } }));
+  } catch {
+    return [];
+  }
+}
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <base href={base} />
+    <style>
+      :root { --ink:#0b0b0c; --bg:#f6f7f9; --card:#fff; --muted:#6b7280; }
+      html,body{height:100%} body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui, -apple-system, Segoe UI, Roboto, sans-serif}
+      header{position:sticky;top:0;background:var(--card);border-bottom:1px solid #e5e7eb}
+      .wrap{max-width:1000px;margin:0 auto;padding:16px}
+      .card{background:var(--card);border:1px solid #e5e7eb;border-radius:14px;padding:18px}
+      .btn{background:#111;color:#fff;border-radius:10px;padding:10px 14px;text-decoration:none}
+      small{color:var(--muted)}
+      .modal{position:fixed;inset:0;background:rgba(0,0,0,.3);display:none;align-items:center;justify-content:center}
+      .modal > div{background:#fff;border-radius:12px;padding:20px;max-width:420px}
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap" style="display:flex;gap:12px;align-items:center;">
+        <strong>TX Well Lookup</strong>
+        <nav style="margin-left:auto;display:flex;gap:12px;align-items:center;">
+          <a href={base}>Home</a>
+        </nav>
+      </div>
+    </header>
+    <main class="wrap" style="padding-block:24px">
+      {well ? (
+        <section class="card">
+          <h2>{well.name}</h2>
+          <p><small>ID: {well.id} • {well.county} County • Depth: {well.depth_ft} ft</small></p>
+          <div style="display:flex;gap:12px;align-items:center;margin-top:8px">
+            <button id="btn-report" class="btn">Generate Report</button>
+            <span id="report-status"><small>Idle</small></span>
+          </div>
+        </section>
+      ) : (
+        <section class="card"><p>Well not found.</p></section>
+      )}
+
+      <div class="modal" id="paywall">
+        <div>
+          <h3>Buy credits</h3>
+          <p><small>This is a stubbed paywall. Close to continue.</small></p>
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button id="close-paywall" class="btn">Close</button>
+          </div>
+        </div>
+      </div>
+    </main>
+    <script is:inline>
+      const btn = document.getElementById('btn-report');
+      const status = document.getElementById('report-status');
+      const modal = document.getElementById('paywall');
+      const close = document.getElementById('close-paywall');
+      function showModal(){ modal.style.display='flex'; }
+      function hideModal(){ modal.style.display='none'; }
+      close?.addEventListener('click', hideModal);
+      btn?.addEventListener('click', async () => {
+        status.innerHTML = '<small>Requesting…</small>';
+        await new Promise(r => setTimeout(r, 500));
+        // Randomly simulate 402
+        if (Math.random() < 0.5) {
+          status.innerHTML = '<small>Payment required (stub)</small>';
+          showModal();
+          return;
+        }
+        const reportId = Math.random().toString(36).slice(2, 9);
+        status.innerHTML = '<small>Generating…</small>';
+        await new Promise(r => setTimeout(r, 900));
+        const fakeUrl = new URL('fake/report.pdf', document.baseURI).toString();
+        status.innerHTML = `<small>Ready:</small> <a class="btn" href="${fakeUrl}">Download PDF</a>`;
+      });
+    </script>
+  </body>
+  </html>
+
+
