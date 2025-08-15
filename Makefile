@@ -1,4 +1,19 @@
-.PHONY: dev.web dev.api dev stop db.shell api.shell
+dev:
+	docker compose up --build
+
+stop:
+	docker compose down
+
+db.shell:
+	docker exec -it txwell_db psql -U postgres -d txwell
+
+api.shell:
+	docker exec -it txwell_api /bin/sh
+
+seed.sample:
+	docker exec -it txwell_api python /app/data/scripts/seed_sdr_sample.py
+
+.PHONY: dev.web dev.api dev stop db.shell api.shell seed.sample
 
 # Start Astro web dev server on port 4321
 dev.web:
@@ -26,5 +41,13 @@ db.shell:
 
 api.shell:
 	docker compose exec -it api /bin/sh
+
+
+# Generate and seed SDR sample into DB via API container
+seed.sample:
+	python3 data/scripts/generate_sdr_sample.py data/fixtures/sdr_sample.csv
+	docker compose exec -T -e DATABASE_URL="postgresql://postgres:postgres@db:5432/txwl" api \
+		python /app/data/scripts/seed_sdr_sample.py /app/data/fixtures/sdr_sample.csv || \
+		echo "Start docker compose (make dev) to ensure DB is available, then retry."
 
 

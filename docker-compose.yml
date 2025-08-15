@@ -2,6 +2,64 @@ version: "3.9"
 
 services:
   db:
+    image: postgis/postgis:16-3.4
+    container_name: txwell_db
+    environment:
+      POSTGRES_DB: txwell
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - ./db/init:/docker-entrypoint-initdb.d
+      - db_data:/var/lib/postgresql/data
+
+  api:
+    image: python:3.11-slim
+    container_name: txwell_api
+    working_dir: /app
+    environment:
+      DB_URL: postgresql+psycopg2://postgres:postgres@db:5432/txwell
+      PYTHONDONTWRITEBYTECODE: "1"
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - ./apps/api:/app/apps/api
+      - ./data:/app/data
+      - ./apps/api/requirements.txt:/app/requirements.txt
+    command: /bin/sh -c "pip install -q -r requirements.txt && uvicorn apps.api.app.main:app --host 0.0.0.0 --port 8000"
+    depends_on:
+      - db
+    ports:
+      - "8000:8000"
+
+  web:
+    image: node:20-alpine
+    container_name: txwell_web
+    working_dir: /app
+    environment:
+      PUBLIC_API_URL: http://localhost:8000
+      PUBLIC_BASE_PATH: /
+    volumes:
+      - ./apps/web:/app
+    command: sh -c "npm ci && npm run dev"
+    ports:
+      - "4321:4321"
+    depends_on:
+      - api
+
+  redis:
+    image: redis:7-alpine
+    container_name: txwell_redis
+    ports:
+      - "6379:6379"
+
+volumes:
+  db_data:
+
+version: "3.9"
+
+services:
+  db:
     image: postgis/postgis:15-3.4
     container_name: txwl_db
     environment:
@@ -32,6 +90,7 @@ services:
       - "8000:8000"
     volumes:
       - ./apps/api/app:/app/app
+      - ./data:/app/data:ro
     command: uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 
   web:
