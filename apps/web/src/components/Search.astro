@@ -1,7 +1,10 @@
-<section class="card">
+---
+const publicApi = import.meta.env.PUBLIC_API_URL || '';
+---
+<section class="card" data-api={publicApi}>
   <h3 style="margin-top:0">Search</h3>
   <form id="search-form" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
-    <input id="q" name="q" placeholder="Search wells..." style="flex:1 1 220px;min-width:200px;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb" />
+    <input id="q" name="q" placeholder="Search wells (try: Sample)" style="flex:1 1 220px;min-width:200px;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb" />
     <input id="depthMin" name="depthMin" type="number" placeholder="Min depth (ft)" style="flex:0 0 160px;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb" />
     <input id="depthMax" name="depthMax" type="number" placeholder="Max depth (ft)" style="flex:0 0 160px;padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb" />
     <button class="btn" type="submit" style="flex:0 0 auto">Search</button>
@@ -9,17 +12,33 @@
   <div id="results" style="margin-top:12px"></div>
   <script is:inline>
     const form = document.getElementById('search-form');
+    const container = document.currentScript.closest('section');
     const results = document.getElementById('results');
+    const inputQ = document.getElementById('q');
+    const inputMin = document.getElementById('depthMin');
+    const inputMax = document.getElementById('depthMax');
+    let currentItems = [];
+    const setStatus = (msg) => {
+      results.innerHTML = `<small>${msg}</small>`;
+    };
     async function fetchItems() {
       try {
-        const api = (window.__tx_api || '').toString().trim();
-        const url = api ? `${api.replace(/\/?$/, '/') }v1/search` : 'api/search.json';
-        const res = await fetch(url, { cache: 'no-store' });
+        const apiBase = (container?.dataset.api || '').toString().trim();
+        const primary = apiBase
+          ? new URL('v1/search', apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
+          : new URL('/v1/search', window.location.origin).toString();
+        let res = await fetch(primary, { cache: 'no-store' });
+        if (!res.ok) {
+          // Fallback to static stub when API/proxy is unavailable
+          const stub = new URL('api/search.json', document.baseURI).toString();
+          res = await fetch(stub, { cache: 'no-store' });
+        }
         if (!res.ok) throw new Error('bad status');
         const data = await res.json();
         const items = Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
         return items;
-      } catch {
+      } catch (err) {
+        console.error('search fetch failed', err);
         return [];
       }
     }
@@ -48,7 +67,7 @@
     function render(items) {
       items = applyFilters(items);
       if (!items.length) {
-        results.innerHTML = '<small>No results.</small>';
+        setStatus('No results.');
         ensureMap([]);
         return;
       }
@@ -78,13 +97,22 @@
       });
       ensureMap(items);
     }
-    // initial load and on submit (no filtering yet; stub just returns all)
-    fetchItems().then((items) => { render(items); ensureMap(items); });
+    // initial load and on submit
+    setStatus('Loading…');
+    fetchItems().then((items) => { currentItems = items; render(items); ensureMap(items); });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
+      setStatus('Searching…');
       const items = await fetchItems();
+      currentItems = items;
       render(items);
     });
+
+    // live filter as you type/change
+    const onFilterChange = () => render(currentItems);
+    inputQ.addEventListener('input', onFilterChange);
+    inputMin.addEventListener('input', onFilterChange);
+    inputMax.addEventListener('input', onFilterChange);
   </script>
 </section>
 

@@ -1,5 +1,25 @@
 import os
 from contextlib import contextmanager
+from sqlalchemy import create_engine
+from sqlalchemy.engine import Engine
+
+
+def get_engine() -> Engine:
+    url = os.getenv('DATABASE_URL', 'postgresql+psycopg2://postgres:postgres@localhost:5432/txwell')
+    return create_engine(url, pool_pre_ping=True)
+
+
+@contextmanager
+def get_db_session():
+    engine = get_engine()
+    conn = engine.connect()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+import os
+from contextlib import contextmanager
 from typing import Iterator, Optional
 
 from sqlalchemy import create_engine
