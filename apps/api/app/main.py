@@ -7,12 +7,14 @@ from starlette import status
 from uuid import uuid4
 import random
 import os
+import time
 from sqlalchemy import text
 
 from .db import get_db_session
 from .models import WellReport
 import math
 from fastapi.responses import HTMLResponse, FileResponse
+from .security import sign_payload, verify_token
 from data.bundles.bundle_builder import build_bundle
 
 
@@ -201,6 +203,26 @@ def download_report_file(report_id: str, type: str = "pdf"):
     media = "application/pdf" if key == "pdf" else ("application/zip" if key == "zip" else "application/octet-stream")
     filename = os.path.basename(path)
     return FileResponse(path, media_type=media, filename=filename)
+
+
+# Sprint 9: signed download proxy endpoints
+@app.get("/v1/reports/{report_id}/signed")
+def get_signed_download(report_id: str) -> Dict[str, str]:
+    # short-lived token (5 minutes)
+    object_key = f"reports/{report_id}/report.pdf"
+    token = sign_payload({"k": object_key, "exp": time.time() + 300})
+    return {"token": token}
+
+
+@app.get("/v1/download")
+def proxy_signed_download(token: str):
+    payload = verify_token(token)
+    object_key = payload.get("k")
+    if not object_key:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="missing key")
+    # Dev: redirect to fake path; prod would stream from S3/R2
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse(url=f"/fake/{object_key}")
 
 
 @app.get("/v1/wells/{well_id}")
