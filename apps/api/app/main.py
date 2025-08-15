@@ -42,7 +42,8 @@ STUB_ITEMS: List[Dict[str, Any]] = [
 @app.get("/v1/search")
 def search_endpoint(q: str | None = None, county: str | None = None, limit: int = 20,
                     lat: float | None = None, lon: float | None = None, radius_m: int = 1609,
-                    depth_min: float | None = None, depth_max: float | None = None) -> Dict[str, List[Dict[str, Any]]]:
+                    depth_min: float | None = None, depth_max: float | None = None,
+                    include_gwdb: bool = False) -> Dict[str, List[Dict[str, Any]]]:
     # If no DATABASE_URL, fall back to stub items
     if not os.getenv("DATABASE_URL"):
         items = STUB_ITEMS
@@ -55,6 +56,10 @@ def search_endpoint(q: str | None = None, county: str | None = None, limit: int 
             items = [it for it in items if it.get("depth_ft") is None or it["depth_ft"] >= depth_min]
         if depth_max is not None:
             items = [it for it in items if it.get("depth_ft") is None or it["depth_ft"] <= depth_max]
+        # Optionally surface a gwdb flag in stub as false
+        if include_gwdb:
+            for it in items:
+                it.setdefault("gwdb_available", False)
         return {"items": items[: min(max(limit, 1), 100)]}
 
     # DB-backed path (expects PostGIS; simplified for now)
@@ -78,10 +83,18 @@ def search_endpoint(q: str | None = None, county: str | None = None, limit: int 
         if lat is not None and lon is not None:
             where.append("ST_DWithin(geom, ST_SetSRID(ST_MakePoint(:lon,:lat),4326)::geography, :radius)")
             params.update({"lat": lat, "lon": lon, "radius": radius_m})
-        sql = "SELECT report_id as id, owner_name as name, county, ST_Y(geom) as lat, ST_X(geom) as lon, depth_ft FROM well_reports"
+        select_cols = "report_id as id, owner_name as name, county, ST_Y(geom) as lat, ST_X(geom) as lon, depth_ft"
+        join_clause = ""
+        order_bias = ""
+        if include_gwdb:
+            # Bias linked wells to top when requested
+            select_cols += ", (wl.gwdb_id IS NOT NULL) as gwdb_available"
+            join_clause = " LEFT JOIN well_links wl ON wl.report_id = well_reports.report_id"
+            order_bias = " (wl.gwdb_id IS NOT NULL) DESC,"
+        sql = f"SELECT {select_cols} FROM well_reports{join_clause}"
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += " ORDER BY date_completed DESC NULLS LAST LIMIT :limit"
+        sql += f" ORDER BY{order_bias} date_completed DESC NULLS LAST LIMIT :limit"
         params["limit"] = min(max(limit, 1), 100)
         rows = session.execute(text(sql), params).mappings().all()
         items = [dict(r) for r in rows]
@@ -118,6 +131,8 @@ def get_well_by_id(well_id: str) -> Dict[str, Any]:
                 return {
                     **it,
                     "location_confidence": "high",
+                    "gwdb_available": False,
+                    "gwdb_depth_ft": None,
                     "documents": [{"title": "Well Info Sheet", "url": "/fake/docs/well-info.pdf"}],
                 }
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Well not found")
@@ -126,9 +141,20 @@ def get_well_by_id(well_id: str) -> Dict[str, Any]:
         if session is None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="DB session unavailable")
         sql = """
-        SELECT report_id as id, owner_name as name, county, ST_Y(geom) as lat, ST_X(geom) as lon,
-               depth_ft, COALESCE(location_error_m,0) as location_error_m
-        FROM well_reports WHERE report_id = :rid LIMIT 1
+        SELECT wr.report_id as id,
+               wr.owner_name as name,
+               wr.county,
+               ST_Y(wr.geom) as lat,
+               ST_X(wr.geom) as lon,
+               wr.depth_ft,
+               COALESCE(wr.location_error_m,0) as location_error_m,
+               (wl.gwdb_id IS NOT NULL) as gwdb_available,
+               gw.depth_ft as gwdb_depth_ft
+        FROM well_reports wr
+        LEFT JOIN well_links wl ON wl.report_id = wr.report_id
+        LEFT JOIN gwdb_wells gw ON gw.id = wl.gwdb_id
+        WHERE wr.report_id = :rid
+        LIMIT 1
         """
         row = session.execute(text(sql), {"rid": well_id}).mappings().first()
         if not row:
@@ -143,6 +169,8 @@ def get_well_by_id(well_id: str) -> Dict[str, Any]:
             "lon": row["lon"],
             "depth_ft": row["depth_ft"],
             "location_confidence": confidence,
+            "gwdb_available": bool(row.get("gwdb_available", False)),
+            "gwdb_depth_ft": row.get("gwdb_depth_ft"),
             "documents": [{"title": "Well Info Sheet", "url": "/fake/docs/well-info.pdf"}],
         }
 
