@@ -12,7 +12,8 @@ from sqlalchemy import text
 from .db import get_db_session
 from .models import WellReport
 import math
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+from data.bundles.bundle_builder import build_bundle
 
 
 app = FastAPI(title="TX Well Lookup API", version="0.1.0")
@@ -108,16 +109,30 @@ reports_store: Dict[str, Dict[str, Any]] = {}
 
 @app.post("/v1/reports", status_code=status.HTTP_201_CREATED)
 def create_report(payload: Dict[str, Any] | None = None) -> Dict[str, str]:
-    # Sprint 9: create a job and return an ID. In dev, we mark it ready immediately.
+    # Create a report bundle immediately in dev and return downloadable URLs
     report_id = str(uuid4())
-    well_id = None
+    lat = 30.2672
+    lon = -97.7431
     if isinstance(payload, dict):
+        # Prefer explicit coordinates if provided
+        lat = float(payload.get("lat", lat))
+        lon = float(payload.get("lon", lon))
+        # If only a well_id is provided, try to find coordinates from stub list
         well_id = payload.get("well_id")
+        if well_id and not ("lat" in payload and "lon" in payload):
+            for it in STUB_ITEMS:
+                if it["id"] == well_id:
+                    lat = float(it.get("lat", lat))
+                    lon = float(it.get("lon", lon))
+                    break
+
+    out = build_bundle(output_dir="/app/.reports", lat=lat, lon=lon)
+
     reports_store[report_id] = {
         "status": "ready",
-        "pdf_url": "/fake/report.pdf",
-        "zip_url": "/fake/report.zip",
-        "well_id": well_id,
+        "paths": out,
+        "pdf_url": f"/v1/reports/{report_id}/download?type=pdf",
+        "zip_url": f"/v1/reports/{report_id}/download?type=zip",
     }
     return {"report_id": report_id}
 
@@ -169,6 +184,23 @@ def get_report_html(report_id: str) -> HTMLResponse:
     </html>
     """
     return HTMLResponse(content=html)
+
+
+@app.get("/v1/reports/{report_id}/download")
+def download_report_file(report_id: str, type: str = "pdf"):
+    report = reports_store.get(report_id)
+    if not report:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Report not found")
+    paths: Dict[str, str] = report.get("paths", {})
+    key = type.lower()
+    if key not in {"pdf", "zip", "csv", "geojson", "manifest"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid type")
+    path = paths.get(key)
+    if not path or not os.path.exists(path):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="File not available")
+    media = "application/pdf" if key == "pdf" else ("application/zip" if key == "zip" else "application/octet-stream")
+    filename = os.path.basename(path)
+    return FileResponse(path, media_type=media, filename=filename)
 
 
 @app.get("/v1/wells/{well_id}")
