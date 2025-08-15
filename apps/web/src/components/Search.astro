@@ -13,8 +13,15 @@
     async function fetchItems() {
       try {
         const api = (window.__tx_api || '').toString().trim();
-        const url = api ? `${api.replace(/\/?$/, '/') }v1/search` : 'api/search.json';
-        const res = await fetch(url, { cache: 'no-store' });
+        const primary = api
+          ? new URL('v1/search', api.endsWith('/') ? api : api + '/').toString()
+          : new URL('/v1/search', window.location.origin).toString();
+        let res = await fetch(primary, { cache: 'no-store' });
+        if (!res.ok) {
+          // Fallback to static stub when API/proxy is unavailable
+          const stub = new URL('api/search.json', document.baseURI).toString();
+          res = await fetch(stub, { cache: 'no-store' });
+        }
         if (!res.ok) throw new Error('bad status');
         const data = await res.json();
         const items = Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
