@@ -57,4 +57,10 @@ ingest.nightly:
 		python -c "import sys; sys.path.append('/app'); from data.jobs.nightly_snapshots import main; import os; os.environ['DATABASE_URL']=os.environ.get('DATABASE_URL'); import sys; sys.exit(main())" || \
 		echo "Ensure containers are up with 'make dev' before running nightly."
 
+# Generate RRC samples and load into DB
+ingest.rrc:
+	python3 data/scripts/generate_rrc_samples.py
+	docker compose exec -T -e DATABASE_URL="postgresql://postgres:postgres@db:5432/txwl" api \
+		python -c "import sys; sys.path.append('/app'); from data.sources.rrc_permits import upsert_permits_from_csv; from data.sources.rrc_wellbores import upsert_wellbores_from_csv; import os; db=os.environ.get('DATABASE_URL'); print('permits:', upsert_permits_from_csv('/app/data/fixtures/rrc_permits.csv', db)); print('wellbores:', upsert_wellbores_from_csv('/app/data/fixtures/rrc_wellbores.csv', db))"
+
 
