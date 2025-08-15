@@ -46,4 +46,7 @@ Each sprint doc contains **Agent A (Backend)**, **Agent B (Data Pipeline)**, **A
 ## Contributing
 Use feature branches (`feat/...`) + PRs. Keep env values out of the repo.
 
+## Infra
+- See `docs/infra/PLAN.md` for the deployment and environment plan (DB, storage, runners).
+
 
