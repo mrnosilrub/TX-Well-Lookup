@@ -54,7 +54,7 @@ jobs:
           python3 -m pip install --user awscli
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
-      - name: Fetch latest raw SDR schema from R2 (if available)
+      - name: Fetch latest snapshot artifacts from R2 (if available)
         run: |
           set -euo pipefail
           mkdir -p data/tmp
@@ -74,9 +74,11 @@ jobs:
           fi
           SRC_SCHEMA="s3://$RAW_SDR_BUCKET/$SNAPSHOTS_PREFIX$LATEST/sdr_raw_schema.sql"
           SRC_ALIAS="s3://$RAW_SDR_BUCKET/$SNAPSHOTS_PREFIX$LATEST/sdr_header_aliases.json"
-          echo "Fetching $SRC_SCHEMA and $SRC_ALIAS"
+          SRC_MANIFEST="s3://$RAW_SDR_BUCKET/$SNAPSHOTS_PREFIX$LATEST/manifest.json"
+          echo "Fetching $SRC_SCHEMA, $SRC_ALIAS, and $SRC_MANIFEST"
           aws s3 cp "$SRC_SCHEMA" data/tmp/sdr_raw_schema.sql --endpoint-url "$STORAGE_ENDPOINT" || true
           aws s3 cp "$SRC_ALIAS" data/tmp/sdr_header_aliases.json --endpoint-url "$STORAGE_ENDPOINT" || true
+          aws s3 cp "$SRC_MANIFEST" data/tmp/manifest.json --endpoint-url "$STORAGE_ENDPOINT" || true
           if [ -s data/tmp/sdr_raw_schema.sql ]; then
             echo "Raw schema downloaded: data/tmp/sdr_raw_schema.sql"
           else
@@ -107,6 +109,16 @@ jobs:
           mkdir -p data/raw_data
           aws s3 cp "s3://$RAW_SDR_BUCKET/$SNAPSHOTS_PREFIX$LATEST/sdr.zip" data/raw_data/sdr.zip --endpoint-url "$STORAGE_ENDPOINT"
           if command -v unzip >/dev/null 2>&1; then unzip -n data/raw_data/sdr.zip -d data/raw_data/; else sudo apt-get update -y && sudo apt-get install -y --no-install-recommends unzip >/dev/null && unzip -n data/raw_data/sdr.zip -d data/raw_data/; fi
+
+      - name: Prepare ETL dependencies and aliases
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --user psycopg2-binary openpyxl
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          # If alias file is missing, generate from manifest + extracted dictionary
+          if [ ! -s data/tmp/sdr_header_aliases.json ] && [ -s data/tmp/manifest.json ] && [ -d data/raw_data/SDRDownload ]; then \
+            python3 data/scripts/extract_sdr_header_aliases.py --manifest data/tmp/manifest.json --source-dir data/raw_data/SDRDownload --out data/tmp/sdr_header_aliases.json; \
+          fi
 
       - name: Apply 03_sdr_children.sql (DS2)
         run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/03_sdr_children.sql
