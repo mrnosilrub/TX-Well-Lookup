@@ -144,6 +144,8 @@ jobs:
           aws s3 cp data/raw_data/manifest.json s3://$RAW_SDR_BUCKET/$SNAPSHOT_PREFIX/ --endpoint-url "$STORAGE_ENDPOINT"
           aws s3 cp data/raw_data/samples/heads s3://$RAW_SDR_BUCKET/$SNAPSHOT_PREFIX/samples/heads/ --recursive --exclude "*" --include "*.head.txt" --endpoint-url "$STORAGE_ENDPOINT"
           aws s3 cp data/raw_data/sdr_raw_schema.sql s3://$RAW_SDR_BUCKET/$SNAPSHOT_PREFIX/ --endpoint-url "$STORAGE_ENDPOINT" || true
+          aws s3 cp data/raw_data/sdr_header_aliases.json s3://$RAW_SDR_BUCKET/$SNAPSHOT_PREFIX/ --endpoint-url "$STORAGE_ENDPOINT" || true
+          aws s3 cp data/raw_data/DS3_mapping.md s3://$RAW_SDR_BUCKET/$SNAPSHOT_PREFIX/ --endpoint-url "$STORAGE_ENDPOINT" || true
           echo "SNAPSHOT_PREFIX=$SNAPSHOT_PREFIX" >> $GITHUB_ENV
 
       - name: Upload CI artifacts
