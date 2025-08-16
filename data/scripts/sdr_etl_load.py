@@ -370,6 +370,8 @@ def etl(source_dir: str, aliases_path: str, database_url: str, batch_size: int =
             for r in parse_rows(path):
                 sdr_id = (r.get(id_key or "", "").strip() if id_key else "")
                 if not sdr_id:
+                    sdr_id = extract_sdr_id(r) or ""
+                if not sdr_id:
                     continue
                 # primary key value from file (if present), else generate per-sdr sequence
                 pk_raw = r.get(pk_key or "", "").strip() if pk_key else ""
