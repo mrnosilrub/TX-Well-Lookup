@@ -24,9 +24,9 @@ jobs:
     environment: ${{ inputs.env }}
     steps:
       - uses: actions/checkout@v4
-      - name: Setup psql (docker)
+      - name: Setup psql container
         run: |
-          echo "PSQL=docker run --rm -i -v \"$GITHUB_WORKSPACE:/work\" -w /work postgres:15 psql" >> "$GITHUB_ENV"
+          docker pull postgres:15
       - name: Sanitize connection string
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -41,16 +41,16 @@ jobs:
           echo "CONNECT_URL=$DB_URL" >> "$GITHUB_ENV"
       - name: Enable extensions
         run: |
-          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          docker run --rm postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          docker run --rm postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
       - name: Apply base schema
         run: |
-          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/01_postgis.sql
+          docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/01_postgis.sql
           # Prefer full GWDB schema; fall back to links-only if present
-          ("$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb.sql) || ("$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb_links.sql)
-          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/03_well_reports_fix.sql
+          (docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb.sql) || (docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb_links.sql)
+          docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/03_well_reports_fix.sql
           # Optional indexes if present
-          ("$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/04_indexes.sql) || true
+          (docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/04_indexes.sql) || true
 
   verify:
     name: Verify schema (${{ inputs.env }})
@@ -58,9 +58,9 @@ jobs:
     needs: apply
     environment: ${{ inputs.env }}
     steps:
-      - name: Setup psql (docker)
+      - name: Setup psql container
         run: |
-          echo "PSQL=docker run --rm -i -v \"$GITHUB_WORKSPACE:/work\" -w /work postgres:15 psql" >> "$GITHUB_ENV"
+          docker pull postgres:15
       - name: Sanitize connection string
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -72,14 +72,12 @@ jobs:
           echo "CONNECT_URL=$DB_URL" >> "$GITHUB_ENV"
       - name: Verify extensions
         run: |
-          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT extname FROM pg_extension WHERE extname IN ('postgis','pg_trgm');"
+          docker run --rm postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT extname FROM pg_extension WHERE extname IN ('postgis','pg_trgm');"
       - name: Verify core tables exist
         run: |
-          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT 'well_reports' AS tbl, to_regclass('public.well_reports') IS NOT NULL AS exists
+          docker run --rm postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT 'well_reports' AS tbl, to_regclass('public.well_reports') IS NOT NULL AS exists
           UNION ALL SELECT 'gwdb_wells', to_regclass('public.gwdb_wells') IS NOT NULL
           UNION ALL SELECT 'well_links', to_regclass('public.well_links') IS NOT NULL;"
       - name: Show indexes summary
         run: |
-          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT tablename, indexname FROM pg_indexes WHERE schemaname='public' AND tablename IN ('well_reports','gwdb_wells') ORDER BY tablename, indexname;"
-
-
+          docker run --rm postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT tablename, indexname FROM pg_indexes WHERE schemaname='public' AND tablename IN ('well_reports','gwdb_wells') ORDER BY tablename, indexname;"
