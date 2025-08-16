@@ -43,6 +43,11 @@ def health() -> Dict[str, bool]:
     return {"ok": True}
 
 
+@app.get("/")
+def root() -> Dict[str, Any]:
+    return {"ok": True, "service": "tx-well-lookup-api", "version": app.version}
+
+
 STUB_ITEMS: List[Dict[str, Any]] = [
     {"id": "S-0001", "name": "Sample Well 1", "county": "Travis", "lat": 30.2672, "lon": -97.7431, "depth_ft": 420},
     {"id": "S-0002", "name": "Sample Well 2", "county": "Hays", "lat": 29.9996, "lon": -98.1029, "depth_ft": 350},
