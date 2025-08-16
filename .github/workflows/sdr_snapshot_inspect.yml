@@ -116,6 +116,22 @@ jobs:
             --out data/raw_data/sdr_raw_schema.sql
           echo "Generated raw schema at data/raw_data/sdr_raw_schema.sql"
 
+      - name: Extract header aliases (manifest + dictionary)
+        run: |
+          python -m pip install --upgrade pip
+          pip install openpyxl
+          python data/scripts/extract_sdr_header_aliases.py \
+            --manifest data/raw_data/manifest.json \
+            --source-dir data/raw_data/SDRDownload \
+            --out data/raw_data/sdr_header_aliases.json
+
+      - name: Build DS3 mapping markdown
+        run: |
+          python data/scripts/build_ds3_mapping_md.py \
+            --manifest data/raw_data/manifest.json \
+            --aliases data/raw_data/sdr_header_aliases.json \
+            --out data/raw_data/DS3_mapping.md
+
       - name: Upload to R2
         run: |
           set -euo pipefail
@@ -138,6 +154,8 @@ jobs:
             data/raw_data/manifest.json
             data/raw_data/samples/heads/**
             data/raw_data/sdr_raw_schema.sql
+            data/raw_data/sdr_header_aliases.json
+            data/raw_data/DS3_mapping.md
 
       - name: Job summary
         run: |
