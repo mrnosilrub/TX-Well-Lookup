@@ -36,7 +36,8 @@ jobs:
         run: |
           pip install -r apps/api/requirements.txt
           pip install psycopg2-binary
-      - name: Sync SDR raw from R2 (optional)
+          pip install requests
+      - name: Fetch SDR raw (R2 or Web)
         env:
           AWS_ACCESS_KEY_ID: ${{ secrets.STORAGE_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.STORAGE_SECRET_ACCESS_KEY }}
@@ -44,14 +45,25 @@ jobs:
           RAW_SDR_BUCKET: ${{ vars.RAW_SDR_BUCKET }}
           RAW_SDR_PREFIX: ${{ vars.RAW_SDR_PREFIX }}
           STORAGE_ENDPOINT: ${{ secrets.STORAGE_ENDPOINT }}
+          SDR_ZIP_URL: ${{ vars.SDR_ZIP_URL }}
+          SDR_BASE_URL: ${{ vars.SDR_BASE_URL }}
         run: |
           set -euo pipefail
           mkdir -p data/raw_data/SDRDownload/SDRDownload
           if [ -n "${RAW_SDR_BUCKET:-}" ]; then
             aws s3 sync "s3://${RAW_SDR_BUCKET}/${RAW_SDR_PREFIX}" "data/raw_data/SDRDownload/SDRDownload" --endpoint-url "${STORAGE_ENDPOINT}" --no-progress
             echo "RAW_SDR_DIR=$GITHUB_WORKSPACE/data/raw_data/SDRDownload/SDRDownload" >> "$GITHUB_ENV"
+          elif [ -n "${SDR_ZIP_URL:-}" ] || [ -n "${SDR_BASE_URL:-}" ]; then
+            python - <<'PY'
+            import os
+            from data.sources.sdr_web_fetch import ensure_sdr_from_web
+            dest = "data/raw_data/SDRDownload/SDRDownload"
+            ensure_sdr_from_web(dest_dir=dest, zip_url=os.getenv("SDR_ZIP_URL"), base_url=os.getenv("SDR_BASE_URL"))
+            print("Downloaded SDR to", dest)
+            PY
+            echo "RAW_SDR_DIR=$GITHUB_WORKSPACE/data/raw_data/SDRDownload/SDRDownload" >> "$GITHUB_ENV"
           else
-            echo "RAW_SDR_BUCKET not set; skipping R2 sync"
+            echo "No RAW_SDR_BUCKET or SDR_ZIP_URL/SDR_BASE_URL provided; skipping SDR fetch"
           fi
       - name: Run nightly snapshots
         env:
