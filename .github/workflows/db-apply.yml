@@ -30,18 +30,20 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          DB_URL=$(echo "$DATABASE_URL" | sed -E 's/^psql[[:space:]]+//')
+          psql -d "$DB_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql -d "$DB_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
       - name: Apply base schema
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/01_postgis.sql
+          DB_URL=$(echo "$DATABASE_URL" | sed -E 's/^psql[[:space:]]+//')
+          psql -d "$DB_URL" -v ON_ERROR_STOP=1 -f db/init/01_postgis.sql
           # Prefer full GWDB schema; fall back to links-only if present
-          (psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb.sql) || (psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb_links.sql)
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/03_well_reports_fix.sql
+          (psql -d "$DB_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb.sql) || (psql -d "$DB_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb_links.sql)
+          psql -d "$DB_URL" -v ON_ERROR_STOP=1 -f db/init/03_well_reports_fix.sql
           # Optional indexes if present
-          (psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/04_indexes.sql) || true
+          (psql -d "$DB_URL" -v ON_ERROR_STOP=1 -f db/init/04_indexes.sql) || true
 
   verify:
     name: Verify schema (${{ inputs.env }})
@@ -55,18 +57,21 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT extname FROM pg_extension WHERE extname IN ('postgis','pg_trgm');"
+          DB_URL=$(echo "$DATABASE_URL" | sed -E 's/^psql[[:space:]]+//')
+          psql -d "$DB_URL" -v ON_ERROR_STOP=1 -c "SELECT extname FROM pg_extension WHERE extname IN ('postgis','pg_trgm');"
       - name: Verify core tables exist
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT 'well_reports' AS tbl, to_regclass('public.well_reports') IS NOT NULL AS exists
+          DB_URL=$(echo "$DATABASE_URL" | sed -E 's/^psql[[:space:]]+//')
+          psql -d "$DB_URL" -v ON_ERROR_STOP=1 -c "SELECT 'well_reports' AS tbl, to_regclass('public.well_reports') IS NOT NULL AS exists
           UNION ALL SELECT 'gwdb_wells', to_regclass('public.gwdb_wells') IS NOT NULL
           UNION ALL SELECT 'well_links', to_regclass('public.well_links') IS NOT NULL;"
       - name: Show indexes summary
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
         run: |
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT tablename, indexname FROM pg_indexes WHERE schemaname='public' AND tablename IN ('well_reports','gwdb_wells') ORDER BY tablename, indexname;"
+          DB_URL=$(echo "$DATABASE_URL" | sed -E 's/^psql[[:space:]]+//')
+          psql -d "$DB_URL" -v ON_ERROR_STOP=1 -c "SELECT tablename, indexname FROM pg_indexes WHERE schemaname='public' AND tablename IN ('well_reports','gwdb_wells') ORDER BY tablename, indexname;"
 
 
