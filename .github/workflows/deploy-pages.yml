@@ -23,7 +23,7 @@ jobs:
         working-directory: apps/web
         env:
           PUBLIC_BASE_PATH: "/" # custom domain uses root
-          PUBLIC_API_URL: "https://txwl-api.onrender.com"
+          PUBLIC_API_URL: "https://api.dev.txwelllookup.com"
         run: npm run build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
