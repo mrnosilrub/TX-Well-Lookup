@@ -115,3 +115,46 @@ jobs:
           echo "- db/init/03_sdr_children.sql" >> "$GITHUB_STEP_SUMMARY"
           if [ -f db/init/04_indexes.sql ]; then echo "- db/init/04_indexes.sql" >> "$GITHUB_STEP_SUMMARY"; fi
           if [ -f db/init/04_alerts.sql ]; then echo "- db/init/04_alerts.sql" >> "$GITHUB_STEP_SUMMARY"; fi
+
+  verify:
+    name: Verify schema (${{ (inputs.env != '' && inputs.env) || 'prod' }})
+    runs-on: ubuntu-latest
+    needs: apply
+    environment: ${{ (inputs.env != '' && inputs.env) || 'prod' }}
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Install psql client
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Check DB connectivity
+        run: |
+          if [ -z "${DATABASE_URL:-}" ]; then echo "DATABASE_URL is not set" >&2; exit 2; fi
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select version();"
+
+      - name: Verify extensions
+        run: |
+          echo "### Extensions" >> "$GITHUB_STEP_SUMMARY"
+          psql "$DATABASE_URL" -t -A -v ON_ERROR_STOP=1 -c "SELECT extname FROM pg_extension WHERE extname IN ('postgis','pg_trgm') ORDER BY 1;" | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify DS2 child tables exist
+        run: |
+          echo "\n### DS2 child tables present" >> "$GITHUB_STEP_SUMMARY"
+          psql "$DATABASE_URL" -t -A -v ON_ERROR_STOP=1 -c "SELECT table_name FROM information_schema.tables WHERE table_schema='public' AND table_name IN ('well_boreholes','well_casings','well_filters','well_seal_ranges','well_packers','well_plug_back','well_strata','well_levels','well_test','well_injurious_constituent','well_lithology','plug_reports','plug_boreholes','plug_casing','plug_range') ORDER BY 1;" | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify FKs to well_reports
+        run: |
+          echo "\n### Foreign keys to well_reports" >> "$GITHUB_STEP_SUMMARY"
+          psql "$DATABASE_URL" -t -A -v ON_ERROR_STOP=1 -c "SELECT conrelid::regclass || ' -> ' || confrelid::regclass FROM pg_constraint WHERE contype='f' AND confrelid='well_reports'::regclass ORDER BY 1;" | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify sdr_id indexes exist
+        run: |
+          echo "\n### sdr_id indexes on child tables" >> "$GITHUB_STEP_SUMMARY"
+          psql "$DATABASE_URL" -t -A -v ON_ERROR_STOP=1 -c "SELECT tablename || ':' || indexname FROM pg_indexes WHERE schemaname='public' AND tablename IN ('well_boreholes','well_casings','well_filters','well_seal_ranges','well_packers','well_plug_back','well_strata','well_levels','well_test','well_injurious_constituent','well_lithology','plug_boreholes','plug_casing','plug_range') AND indexdef ILIKE '%(sdr_id)%' ORDER BY 1;" | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Verify raw schema (if applied)
+        run: |
+          echo "\n### Raw schema tables (sdr_raw) [first 20]" >> "$GITHUB_STEP_SUMMARY"
+          psql "$DATABASE_URL" -t -A -v ON_ERROR_STOP=1 -c "SELECT table_name FROM information_schema.tables WHERE table_schema='sdr_raw' ORDER BY 1 LIMIT 20;" | sed 's/^/- /' >> "$GITHUB_STEP_SUMMARY" || true
