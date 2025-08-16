@@ -1,4 +1,4 @@
-# Data Pipeline — Scaffold
+# Data Pipeline — Scaffold 
 
 This directory will house the data ingestion and transformation code used to power TX Well Lookup. For Sprint 2, this is a minimal scaffold with no runtime coupling to the app. Future sprints will add real ETL for SDR, GWDB, and RRC sources.
 
