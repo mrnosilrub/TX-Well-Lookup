@@ -1,10 +1,18 @@
-<section class="card">
+---
+const publicApi = import.meta.env.PUBLIC_API_URL || '';
+---
+<section class="card" data-api={publicApi}>
   <h3>API status</h3>
   <p id="api-status" style="margin:0"><small>API: checking…</small></p>
   <script is:inline>
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 1500);
-    fetch('health', { signal: controller.signal, cache: 'no-store' })
+    const container = document.currentScript.closest('section');
+    const apiBase = (container?.dataset.api || '').toString().trim();
+    const url = apiBase
+      ? new URL('health', apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
+      : new URL('health', window.location.origin).toString();
+    fetch(url, { signal: controller.signal, cache: 'no-store' })
       .then((r) => r.ok ? r.json().catch(() => ({ ok: false })) : { ok: false })
       .then((data) => {
         const el = document.getElementById('api-status');
