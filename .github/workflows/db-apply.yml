@@ -102,6 +102,18 @@ jobs:
         run: |
           if [ -f db/init/04_alerts.sql ]; then psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/04_alerts.sql; fi
 
+      - name: Run DS4 ETL (sample; WellData/WellCompletion/WellBoreHole/Casing/Filter)
+        env:
+          ALIASES_PATH: data/raw_data/sdr_header_aliases.json
+          SOURCE_DIR: data/raw_data/SDRDownload
+        run: |
+          # For safety, only run if alias file is available locally (e.g., from a prior DS1 dev run)
+          if [ -f "$ALIASES_PATH" ] && [ -d "$SOURCE_DIR" ]; then \
+            python3 data/scripts/sdr_etl_load.py --source-dir "$SOURCE_DIR" --aliases "$ALIASES_PATH" --database-url "$DATABASE_URL" --batch-size 1000; \
+          else \
+            echo "DS4 ETL skipped (missing source/aliases)"; \
+          fi
+
       - name: Job summary
         run: |
           echo "### DB Init Applied" >> "$GITHUB_STEP_SUMMARY"
