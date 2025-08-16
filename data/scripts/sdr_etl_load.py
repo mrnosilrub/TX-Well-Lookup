@@ -287,11 +287,14 @@ def etl(source_dir: str, aliases_path: str, database_url: str, batch_size: int =
 
         # Child tables loaders (examples shown; pattern can be replicated for all)
         numeric_targets = {"start_depth_ft", "end_depth_ft", "diameter_in", "top_ft", "bottom_ft", "yield", "hours", "water_level_ft", "depth_ft", "migrated_strata_depth"}
+        date_targets = {"measurement_date"}
 
         def coerce_by_target(target: str, value: str) -> object:
             if target in numeric_targets:
                 v = coerce_float(value)
                 return v
+            if target in date_targets:
+                return coerce_date(value)
             return (value or "").strip() if isinstance(value, str) else value
 
         def ensure_parent_ids(conn, id_rows: List[Tuple]) -> None:
