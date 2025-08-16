@@ -605,3 +605,58 @@ def energy_nearby(lat: float, lon: float, radius_m: int = 1609,
         items = [dict(r) for r in rows]
         return {"count": len(items), "items": items}
 
+
+# ===== Debug endpoints =====
+@app.get("/v1/debug/schema")
+def debug_schema() -> Dict[str, Any]:
+    with get_db_session() as session:
+        if session is None:
+            return {"ok": False, "error": "DB session unavailable"}
+        def table_exists(tbl: str) -> bool:
+            try:
+                val = session.execute(text("SELECT to_regclass(:t) IS NOT NULL"), {"t": f"public.{tbl}"}).scalar()
+                return bool(val)
+            except Exception:
+                return False
+        def columns(tbl: str) -> List[str]:
+            try:
+                rows = session.execute(text(
+                    "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=:t ORDER BY ordinal_position"
+                ), {"t": tbl}).scalars().all()
+                return list(rows)
+            except Exception:
+                return []
+        tables = ["well_reports", "gwdb_wells", "well_links", "rrc_permits", "rrc_wellbores"]
+        return {
+            "ok": True,
+            "tables": {t: table_exists(t) for t in tables},
+            "columns": {t: columns(t) for t in tables if table_exists(t)},
+        }
+
+
+@app.get("/v1/debug/gwdb_check")
+def debug_gwdb_check(limit: int = 1) -> Dict[str, Any]:
+    with get_db_session() as session:
+        if session is None:
+            return {"ok": False, "error": "DB session unavailable"}
+        def exists(tbl: str) -> bool:
+            try:
+                return bool(session.execute(text("SELECT to_regclass(:t) IS NOT NULL"), {"t": f"public.{tbl}"}).scalar())
+            except Exception:
+                return False
+        have_links = exists("well_links")
+        have_gwdb = exists("gwdb_wells")
+        if not (have_links and have_gwdb):
+            return {"ok": False, "have_links": have_links, "have_gwdb": have_gwdb, "error": "GWDB tables not present"}
+        try:
+            test_sql = (
+                "SELECT wr.id FROM well_reports wr "
+                "LEFT JOIN well_links wl ON wl.sdr_id = wr.id "
+                "LEFT JOIN gwdb_wells gw ON gw.id = wl.gwdb_id "
+                "LIMIT :lim"
+            )
+            rows = session.execute(text(test_sql), {"lim": min(max(int(limit), 1), 5)}).mappings().all()
+            return {"ok": True, "rows": [r.get("id") for r in rows]}
+        except Exception as exc:
+            return {"ok": False, "error": str(exc)}
+
