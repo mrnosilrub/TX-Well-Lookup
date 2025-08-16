@@ -18,4 +18,8 @@ apps/api/.venv
 .env.*
 apps/**/.env*
 
+# Raw datasets (large; keep out of git)
+data/raw/**
+data/raw_data/**
+
 
