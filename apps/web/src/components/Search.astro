@@ -35,6 +35,13 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
       const primary = apiBase
         ? new URL(`v1/search?${params.toString()}`, apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
         : new URL(`/v1/search?${params.toString()}`, window.location.origin).toString();
+      const primaryNoGwdb = (() => {
+        const p2 = new URLSearchParams(params);
+        p2.delete('include_gwdb');
+        return apiBase
+          ? new URL(`v1/search?${p2.toString()}`, apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
+          : new URL(`/v1/search?${p2.toString()}`, window.location.origin).toString();
+      })();
       const fetchStub = async () => {
         try {
           const stub = new URL('api/search.json', document.baseURI).toString();
@@ -48,10 +55,28 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
       };
       try {
         const res = await fetch(primary, { cache: 'no-store' });
-        if (!res.ok) return await fetchStub();
+        if (!res.ok) {
+          // Retry without GWDB enrichments if server errors
+          try {
+            const resNo = await fetch(primaryNoGwdb, { cache: 'no-store' });
+            if (resNo.ok) {
+              const dataNo = await resNo.json();
+              return Array.isArray(dataNo.items) ? dataNo.items : Array.isArray(dataNo) ? dataNo : [];
+            }
+          } catch {}
+          return await fetchStub();
+        }
         const data = await res.json();
         return Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
       } catch (err) {
+        // On network/JS errors, try no-GWDB path once before stub
+        try {
+          const resNo = await fetch(primaryNoGwdb, { cache: 'no-store' });
+          if (resNo.ok) {
+            const dataNo = await resNo.json();
+            return Array.isArray(dataNo.items) ? dataNo.items : Array.isArray(dataNo) ? dataNo : [];
+          }
+        } catch {}
         console.warn('primary fetch failed, falling back to stub', err);
         return await fetchStub();
       }
