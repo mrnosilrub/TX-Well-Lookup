@@ -153,86 +153,107 @@ def search_endpoint(q: str | None = None, county: str | None = None, limit: int 
         return {"items": items[: min(max(limit, 1), 100)]}
 
     # DB-backed path (expects PostGIS; simplified for now)
-    with get_db_session() as session:
-        if session is None:
-            return {"items": []}
-        # Discover available columns to guard against older schemas
-        try:
-            cols = session.execute(
-                text("""
-                    SELECT column_name FROM information_schema.columns
-                    WHERE table_schema='public' AND table_name='well_reports'
-                """)
-            ).scalars().all()
-            colset = set(cols)
-        except Exception:
-            colset = set()
-
-        where = []
-        params: Dict[str, Any] = {}
-        if q:
-            like_parts = []
-            if 'owner_name' in colset:
-                like_parts.append("owner_name ILIKE :q")
-            if 'address' in colset:
-                like_parts.append("address ILIKE :q")
-            if not like_parts and 'name' in colset:
-                like_parts.append("name ILIKE :q")
-            if like_parts:
-                where.append("(" + " OR ".join(like_parts) + ")")
-                params["q"] = f"%{q}%"
-        if county and 'county' in colset:
-            where.append("county = :county")
-            params["county"] = county
-        if depth_min is not None and 'depth_ft' in colset:
-            where.append("depth_ft >= :depth_min")
-            params["depth_min"] = depth_min
-        if depth_max is not None and 'depth_ft' in colset:
-            where.append("depth_ft <= :depth_max")
-            params["depth_max"] = depth_max
-        if lat is not None and lon is not None and 'geom' in colset:
-            where.append("ST_DWithin(geom, ST_SetSRID(ST_MakePoint(:lon,:lat),4326)::geography, :radius)")
-            params.update({"lat": lat, "lon": lon, "radius": radius_m})
-
-        # Build select list based on available columns
-        name_expr = 'owner_name' if 'owner_name' in colset else ('name' if 'name' in colset else "''")
-        select_cols = f"well_reports.id as id, {name_expr} as name"
-        if 'county' in colset:
-            select_cols += ", county"
-        if 'geom' in colset:
-            select_cols += ", ST_Y(geom) as lat, ST_X(geom) as lon"
-        if 'depth_ft' in colset:
-            select_cols += ", depth_ft"
-        join_clause = ""
-        order_bias = ""
-        if include_gwdb:
-            # Only join if GWDB tables exist; otherwise silently skip GWDB fields
+    try:
+        with get_db_session() as session:
+            if session is None:
+                return {"items": []}
+            # Discover available columns to guard against older schemas
             try:
-                ok = session.execute(text(
-                    "SELECT (to_regclass('public.well_links') IS NOT NULL) AND (to_regclass('public.gwdb_wells') IS NOT NULL) AS ok"
-                )).scalar()
+                cols = session.execute(
+                    text("""
+                        SELECT column_name FROM information_schema.columns
+                        WHERE table_schema='public' AND table_name='well_reports'
+                    """)
+                ).scalars().all()
+                colset = set(cols)
             except Exception:
-                ok = False
-            if ok:
-                select_cols += ", (wl.gwdb_id IS NOT NULL) as gwdb_available, gw.total_depth_ft as gwdb_depth_ft, gw.aquifer as aquifer"
-                join_clause = (
-                    " LEFT JOIN well_links wl ON wl.sdr_id = well_reports.id"
-                    " LEFT JOIN gwdb_wells gw ON gw.id = wl.gwdb_id"
-                )
-                order_bias = " (wl.gwdb_id IS NOT NULL) DESC,"
-        sql = f"SELECT {select_cols} FROM well_reports{join_clause}"
-        if where:
-            sql += " WHERE " + " AND ".join(where)
-        # Order by date when available, else by id
-        if 'date_completed' in colset:
-            sql += f" ORDER BY{order_bias} date_completed DESC NULLS LAST"
-        else:
-            sql += f" ORDER BY{order_bias} id DESC"
-        sql += " LIMIT :limit"
-        params["limit"] = min(max(limit, 1), 100)
-        rows = session.execute(text(sql), params).mappings().all()
-        items = [dict(r) for r in rows]
-        return {"items": items}
+                colset = set()
+
+            where = []
+            params: Dict[str, Any] = {}
+            if q:
+                like_parts = []
+                if 'owner_name' in colset:
+                    like_parts.append("owner_name ILIKE :q")
+                if 'address' in colset:
+                    like_parts.append("address ILIKE :q")
+                if not like_parts and 'name' in colset:
+                    like_parts.append("name ILIKE :q")
+                if like_parts:
+                    where.append("(" + " OR ".join(like_parts) + ")")
+                    params["q"] = f"%{q}%"
+            if county and 'county' in colset:
+                where.append("county = :county")
+                params["county"] = county
+            if depth_min is not None and 'depth_ft' in colset:
+                where.append("depth_ft >= :depth_min")
+                params["depth_min"] = depth_min
+            if depth_max is not None and 'depth_ft' in colset:
+                where.append("depth_ft <= :depth_max")
+                params["depth_max"] = depth_max
+            if lat is not None and lon is not None and 'geom' in colset:
+                where.append("ST_DWithin(geom, ST_SetSRID(ST_MakePoint(:lon,:lat),4326)::geography, :radius)")
+                params.update({"lat": lat, "lon": lon, "radius": radius_m})
+
+            # Build select list based on available columns
+            name_expr = 'owner_name' if 'owner_name' in colset else ('name' if 'name' in colset else "''")
+            select_cols = f"well_reports.id as id, {name_expr} as name"
+            if 'county' in colset:
+                select_cols += ", county"
+            if 'geom' in colset:
+                select_cols += ", ST_Y(geom) as lat, ST_X(geom) as lon"
+            if 'depth_ft' in colset:
+                select_cols += ", depth_ft"
+            join_clause = ""
+            order_bias = ""
+            if include_gwdb:
+                # Only join if GWDB tables exist; otherwise silently skip GWDB fields
+                try:
+                    ok = session.execute(text(
+                        "SELECT (to_regclass('public.well_links') IS NOT NULL) AND (to_regclass('public.gwdb_wells') IS NOT NULL) AS ok"
+                    )).scalar()
+                except Exception:
+                    ok = False
+                if ok:
+                    select_cols += ", (wl.gwdb_id IS NOT NULL) as gwdb_available, gw.total_depth_ft as gwdb_depth_ft, gw.aquifer as aquifer"
+                    join_clause = (
+                        " LEFT JOIN well_links wl ON wl.sdr_id = well_reports.id"
+                        " LEFT JOIN gwdb_wells gw ON gw.id = wl.gwdb_id"
+                    )
+                    order_bias = " (wl.gwdb_id IS NOT NULL) DESC,"
+            sql = f"SELECT {select_cols} FROM well_reports{join_clause}"
+            if where:
+                sql += " WHERE " + " AND ".join(where)
+            # Order by date when available, else by id
+            if 'date_completed' in colset:
+                sql += f" ORDER BY{order_bias} date_completed DESC NULLS LAST"
+            else:
+                sql += f" ORDER BY{order_bias} id DESC"
+            sql += " LIMIT :limit"
+            params["limit"] = min(max(limit, 1), 100)
+            rows = session.execute(text(sql), params).mappings().all()
+            items = [dict(r) for r in rows]
+            return {"items": items}
+    except Exception as exc:
+        try:
+            _logger.error(json.dumps({"event": "search_db_error", "error": str(exc)}))
+        except Exception:
+            pass
+        # Fallback to stub on DB errors
+        items = STUB_ITEMS
+        if q:
+            query = q.lower()
+            items = [it for it in items if query in it["name"].lower() or query in it["county"].lower()]
+        if county:
+            items = [it for it in items if it["county"].lower() == county.lower()]
+        if depth_min is not None:
+            items = [it for it in items if it.get("depth_ft") is None or it["depth_ft"] >= depth_min]
+        if depth_max is not None:
+            items = [it for it in items if it.get("depth_ft") is None or it["depth_ft"] <= depth_max]
+        if include_gwdb:
+            for it in items:
+                it.setdefault("gwdb_available", False)
+        return {"items": items[: min(max(limit, 1), 100)]}
 
 
 reports_store: Dict[str, Dict[str, Any]] = {}
