@@ -62,10 +62,26 @@ def pick_first(headers: Dict[str, List[str]], *candidates: str) -> str | None:
 
 
 def parse_rows(file_path: str, delimiter: str = "|") -> Iterable[Dict[str, str]]:
+    """Read a delimited file into dict rows, tolerating surplus fields per row.
+
+    - Uses restkey to capture extra fields beyond the header rather than raising errors
+    - Normalizes missing values to empty strings
+    - Joins any list values (from restkey) with the delimiter to preserve data
+    """
     with open(file_path, "r", encoding="latin-1", errors="replace", newline="") as f:
-        reader = csv.DictReader(f, delimiter=delimiter)
+        reader = csv.DictReader(f, delimiter=delimiter, restkey="_extra", restval="")
         for row in reader:
-            yield { (k or "").strip(): (v or "").strip() for k, v in row.items() }
+            out: Dict[str, str] = {}
+            for k, v in row.items():
+                if not k:
+                    continue
+                key = (k or "").strip()
+                if isinstance(v, list):
+                    val = delimiter.join([(x.strip() if isinstance(x, str) else "") for x in v])
+                else:
+                    val = (v or "").strip()
+                out[key] = val
+            yield out
 
 
 def coerce_float(val: str) -> float | None:
