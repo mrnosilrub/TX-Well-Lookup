@@ -33,9 +33,8 @@ Provision managed Postgres 15+ with PostGIS and pg_trgm, apply schema, secure ac
 
 ### Verification
 ```bash
-psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM pg_extension WHERE extname IN ('postgis','pg_trgm');"
-psql "$DATABASE_URL" -c "\d+ well_reports"
-psql "$DATABASE_URL" -c "SELECT * FROM well_reports LIMIT 1;" # after P4
+# GitHub → Actions → DB Apply & Verify (P1) → Run workflow → env: dev (or staging/prod)
+# The job applies db/init/*.sql and prints extension/table/index checks.
 ```
 
 

@@ -1,0 +1,72 @@
+name: DB Apply & Verify (P1)
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Environment to target
+        required: true
+        default: dev
+        type: choice
+        options: [dev, staging, prod]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: db-apply-${{ inputs.env }}
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    name: Apply schema (${{ inputs.env }})
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Enable extensions
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+      - name: Apply base schema
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/01_postgis.sql
+          # Prefer full GWDB schema; fall back to links-only if present
+          (psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb.sql) || (psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb_links.sql)
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/03_well_reports_fix.sql
+          # Optional indexes if present
+          (psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/04_indexes.sql) || true
+
+  verify:
+    name: Verify schema (${{ inputs.env }})
+    runs-on: ubuntu-latest
+    needs: apply
+    environment: ${{ inputs.env }}
+    steps:
+      - name: Install psql client
+        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Verify extensions
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT extname FROM pg_extension WHERE extname IN ('postgis','pg_trgm');"
+      - name: Verify core tables exist
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT 'well_reports' AS tbl, to_regclass('public.well_reports') IS NOT NULL AS exists
+          UNION ALL SELECT 'gwdb_wells', to_regclass('public.gwdb_wells') IS NOT NULL
+          UNION ALL SELECT 'well_links', to_regclass('public.well_links') IS NOT NULL;"
+      - name: Show indexes summary
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "SELECT tablename, indexname FROM pg_indexes WHERE schemaname='public' AND tablename IN ('well_reports','gwdb_wells') ORDER BY tablename, indexname;"
+
+
