@@ -8,7 +8,7 @@ Generate report artifacts, upload to storage, and return presigned download URLs
 - Storage uses least-privileged credentials; URLs expire quickly
 
 ### You — Manual Tasks
-- Create per-env bucket(s): `txwl-reports-<env>` on S3 or Cloudflare R2.
+- Create per-env bucket(s): `txwl-reports-<env>` on Cloudflare R2 (per providers.md).
 - Enable encryption at rest; set lifecycle (e.g., IA after 30 days).
 - Store credentials in API platform secrets: `S3_BUCKET`, `S3_REGION`, `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, and optional `S3_ENDPOINT` for R2.
 
@@ -24,7 +24,7 @@ Generate report artifacts, upload to storage, and return presigned download URLs
 
 ### Agent D — DevOps Tasks
 - Optional worker service or in-API background task queue.
-- Ensure credentials are least-privilege (bucket-only access); rotate periodically.
+- Ensure credentials are least-privilege (R2 bucket-only access); rotate periodically.
 
 ### Acceptance
 - Creating a report yields downloadable PDF/ZIP via expiring URLs.

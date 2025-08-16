@@ -7,7 +7,7 @@ Users can watch an area and receive notifications on new nearby activity.
 - CRUD for alerts; delta pollers trigger notifications when matches occur
 
 ### You — Manual Tasks
-- Choose notification provider (email or Slack); provision API keys and from-address/channel.
+- Choose Postmark for email notifications; provision API keys and from-address (per providers.md). Optionally add Slack webhook.
 
 ### Agent A — Backend Tasks
 - Endpoints: `/v1/alerts` (CRUD: create, list, delete) with fields (user, center, radius, filters).

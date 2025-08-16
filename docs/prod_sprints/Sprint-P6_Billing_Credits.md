@@ -7,7 +7,7 @@ Charge for report generation using a credits model; Stripe in test mode.
 - Checkout creates credit grants; webhook processes events; credits enforced on report creation
 
 ### You — Manual Tasks
-- Setup Stripe (test): product/price for credits.
+- Setup Stripe (test): product/price for credits; add keys to environment secrets as per providers.md.
 - Configure webhook endpoint (API URL) and store webhook secret in API platform.
 
 ### Agent A — Backend Tasks

@@ -7,7 +7,7 @@ Serve scalable custom map layers (PMTiles) via CDN with cache-busting.
 - Nightly PMTiles generated and uploaded; web consumes tiles via CDN URL
 
 ### You — Manual Tasks
-- Choose CDN (CloudFront/Cloudflare); configure origin to storage and TLS.
+- Choose Cloudflare CDN; configure origin to Cloudflare R2 and TLS (per providers.md).
 
 ### Agent B — Data Pipeline Tasks
 - Generate PMTiles for wells/clusters nightly; version filenames (e.g., `wells-<yyyymmdd>.pmtiles`).

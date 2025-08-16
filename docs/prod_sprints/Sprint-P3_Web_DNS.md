@@ -8,12 +8,17 @@ Publish the Astro site and wire it to the API via environment configuration and 
 - DNS and TLS configured for web and API subdomains
 
 ### You — Manual Tasks
-- Configure Pages project:
+- Configure GitHub Pages project (per `docs/infra/providers.md`):
   - Build directory: `apps/web` → output `dist/`.
-  - Set build-time env: `PUBLIC_API_URL=https://api.<domain>/`, `PUBLIC_BASE_PATH=/` (custom domain) or `/<repo>/` (project pages).
+  - Set build-time env per environment:
+    - Dev: `PUBLIC_API_URL=https://api.dev.txwelllookup.com`, `PUBLIC_BASE_PATH=/`
+    - Staging: `PUBLIC_API_URL=https://api.staging.txwelllookup.com`, `PUBLIC_BASE_PATH=/`
+    - Prod: `PUBLIC_API_URL=https://api.txwelllookup.com`, `PUBLIC_BASE_PATH=/`
 - Configure DNS:
-  - `txwl.<domain>` → Pages CNAME.
-  - `api.txwl.<domain>` → API service CNAME; enable TLS and HSTS.
+  - `www.txwelllookup.com` → GitHub Pages CNAME. Apex `txwelllookup.com` → 301 to `www` (Cloudflare rule).
+  - `api.dev.txwelllookup.com` → Render dev service CNAME.
+  - `api.staging.txwelllookup.com` → Render staging service CNAME.
+  - `api.txwelllookup.com` → Render prod service CNAME. Enable TLS and (optional) HSTS on API platform.
 
 ### Agent C — Web Tasks
 - Confirm all API calls use `PUBLIC_API_URL` (already in `Search.astro`).

@@ -8,11 +8,17 @@ Deploy FastAPI service using the Dockerfile, wire to managed DB, and harden CORS
 - CORS restricted to web origins; autoscaling enabled
 
 ### You — Manual Tasks
-- Create a service on your chosen platform (Render/Railway/Fly/ECS) pointing to `apps/api/`.
-- Configure env variables:
-  - `DATABASE_URL` = managed DB URL (TLS)
-  - `ALLOWED_ORIGINS` = comma-separated list of web origins (staging, prod)
-- Note the service URL for DNS in P3.
+- Create a service on Render (per `docs/infra/providers.md`) pointing to `apps/api/`.
+- Configure env variables (per environment):
+  - `DATABASE_URL` = Neon connection string for that branch (dev/staging/prod)
+  - `ALLOWED_ORIGINS` = comma-separated web origins for that env:
+    - Dev: `https://dev.txwelllookup.com`
+    - Staging: `https://staging.txwelllookup.com`
+    - Prod: `https://www.txwelllookup.com`
+- Note the platform URL and map it to custom domains in DNS (P3):
+  - Dev: `https://txwl-api-dev.onrender.com` → `https://api.dev.txwelllookup.com`
+  - Staging: `https://txwl-api-staging.onrender.com` → `https://api.staging.txwelllookup.com`
+  - Prod: `https://txwl-api-prod.onrender.com` → `https://api.txwelllookup.com`
 
 ### Agent A — Backend Tasks
 - Make CORS env-driven in `apps/api/app/main.py`:

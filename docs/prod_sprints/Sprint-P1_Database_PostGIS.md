@@ -9,7 +9,7 @@ Provision managed Postgres 15+ with PostGIS and pg_trgm, apply schema, secure ac
 - Network and backup policies in place
 
 ### You — Manual Tasks
-- Provision DB (Neon/CrunchyBridge/RDS). Create database `txwl`.
+- Provision DB on Neon (per providers.md). Create database `txwl` (branches: dev/staging/prod).
 - Create app user with least-privilege (no superuser).
 - Restrict network: only API egress IPs/VPC can connect; force TLS.
 - Enable automated backups and PITR (7–30 days retention).
@@ -25,7 +25,7 @@ Provision managed Postgres 15+ with PostGIS and pg_trgm, apply schema, secure ac
 - Verify tables/indexes exist:
   - GiST on `well_reports(geom)` and `gwdb_wells(geom)`
   - GIN trigram on `owner_name`, `address`
-- Document connection string `DATABASE_URL` (TLS), store in secrets.
+- Document Neon connection string `DATABASE_URL` (TLS), store in env-scoped secrets (dev/staging/prod).
 
 ### Acceptance
 - Queries succeed; `well_reports`, `gwdb_wells`, `well_links` present with indexes.

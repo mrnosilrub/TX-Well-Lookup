@@ -8,8 +8,8 @@ Nightly ingest of SDR and GWDB, followed by spatial linking, with idempotence an
 - Failures alert; linking within 50 m produces entries in `well_links`
 
 ### You — Manual Tasks
-- Choose a scheduler: GitHub Actions cron or platform cron.
-- Add `DATABASE_URL` secret to the scheduler environment.
+- Choose a scheduler: GitHub Actions cron (preferred) or Render cron.
+- Add `DATABASE_URL` secret from Neon (env-specific) to the scheduler environment.
 
 ### Agent B — Data Pipeline Tasks
 - Validate idempotent upserts:
