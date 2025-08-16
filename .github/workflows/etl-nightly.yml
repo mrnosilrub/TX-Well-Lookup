@@ -45,8 +45,8 @@ jobs:
           RAW_SDR_BUCKET: ${{ vars.RAW_SDR_BUCKET }}
           RAW_SDR_PREFIX: ${{ vars.RAW_SDR_PREFIX }}
           STORAGE_ENDPOINT: ${{ secrets.STORAGE_ENDPOINT }}
-          SDR_ZIP_URL: ${{ vars.SDR_ZIP_URL }}
-          SDR_BASE_URL: ${{ vars.SDR_BASE_URL }}
+          SDR_ZIP_URL: ${{ secrets.SDR_ZIP_URL }}
+          SDR_BASE_URL: ${{ secrets.SDR_BASE_URL || vars.SDR_BASE_URL }}
         run: |
           set -euo pipefail
           mkdir -p data/raw_data/SDRDownload/SDRDownload
@@ -63,6 +63,8 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONPATH: ${{ github.workspace }}
+          SDR_ZIP_URL: ${{ secrets.SDR_ZIP_URL }}
+          SDR_BASE_URL: ${{ secrets.SDR_BASE_URL || vars.SDR_BASE_URL }}
         run: |
           python -m data.jobs.nightly_snapshots
       - name: Summaries (Python)

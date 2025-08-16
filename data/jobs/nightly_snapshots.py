@@ -13,6 +13,7 @@ from pathlib import Path
 from data.sources.twdb_sdr import upsert_sdr_from_csv, upsert_sdr_from_twdb_raw
 from data.sources.twdb_gwdb import upsert_gwdb_from_csv
 from data.transforms.link_sdr_gwdb import link_within_distance
+from data.sources.sdr_web_fetch import ensure_sdr_from_web
 
 
 def main() -> int:
@@ -39,6 +40,19 @@ def main() -> int:
         and os.path.isdir(raw_sdr_dir)
         and os.path.isfile(os.path.join(raw_sdr_dir, "WellData.txt"))
     )
+    if not raw_sdr_ok:
+        zip_url = os.getenv("SDR_ZIP_URL")
+        base_url = os.getenv("SDR_BASE_URL")
+        if zip_url or base_url:
+            try:
+                print("SDR raw missing; attempting web fetch...")
+                ensure_sdr_from_web(dest_dir=raw_sdr_dir, zip_url=zip_url, base_url=base_url)
+                raw_sdr_ok = (
+                    os.path.isdir(raw_sdr_dir)
+                    and os.path.isfile(os.path.join(raw_sdr_dir, "WellData.txt"))
+                )
+            except Exception as e:
+                print(f"SDR web fetch failed: {e}")
     if raw_sdr_ok:
         n_sdr = upsert_sdr_from_twdb_raw(raw_sdr_dir, db_url, limit=None)
         sdr_source = "twdb_raw"
