@@ -153,24 +153,53 @@ def search_endpoint(q: str | None = None, county: str | None = None, limit: int 
     with get_db_session() as session:
         if session is None:
             return {"items": []}
+        # Discover available columns to guard against older schemas
+        try:
+            cols = session.execute(
+                text("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='well_reports'
+                """)
+            ).scalars().all()
+            colset = set(cols)
+        except Exception:
+            colset = set()
+
         where = []
         params: Dict[str, Any] = {}
         if q:
-            where.append("(owner_name ILIKE :q OR address ILIKE :q)")
-            params["q"] = f"%{q}%"
-        if county:
+            like_parts = []
+            if 'owner_name' in colset:
+                like_parts.append("owner_name ILIKE :q")
+            if 'address' in colset:
+                like_parts.append("address ILIKE :q")
+            if not like_parts and 'name' in colset:
+                like_parts.append("name ILIKE :q")
+            if like_parts:
+                where.append("(" + " OR ".join(like_parts) + ")")
+                params["q"] = f"%{q}%"
+        if county and 'county' in colset:
             where.append("county = :county")
             params["county"] = county
-        if depth_min is not None:
+        if depth_min is not None and 'depth_ft' in colset:
             where.append("depth_ft >= :depth_min")
             params["depth_min"] = depth_min
-        if depth_max is not None:
+        if depth_max is not None and 'depth_ft' in colset:
             where.append("depth_ft <= :depth_max")
             params["depth_max"] = depth_max
-        if lat is not None and lon is not None:
+        if lat is not None and lon is not None and 'geom' in colset:
             where.append("ST_DWithin(geom, ST_SetSRID(ST_MakePoint(:lon,:lat),4326)::geography, :radius)")
             params.update({"lat": lat, "lon": lon, "radius": radius_m})
-        select_cols = "well_reports.id as id, owner_name as name, county, ST_Y(geom) as lat, ST_X(geom) as lon, depth_ft"
+
+        # Build select list based on available columns
+        name_expr = 'owner_name' if 'owner_name' in colset else ('name' if 'name' in colset else "''")
+        select_cols = f"well_reports.id as id, {name_expr} as name"
+        if 'county' in colset:
+            select_cols += ", county"
+        if 'geom' in colset:
+            select_cols += ", ST_Y(geom) as lat, ST_X(geom) as lon"
+        if 'depth_ft' in colset:
+            select_cols += ", depth_ft"
         join_clause = ""
         order_bias = ""
         if include_gwdb:
@@ -191,7 +220,12 @@ def search_endpoint(q: str | None = None, county: str | None = None, limit: int 
         sql = f"SELECT {select_cols} FROM well_reports{join_clause}"
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += f" ORDER BY{order_bias} date_completed DESC NULLS LAST LIMIT :limit"
+        # Order by date when available, else by id
+        if 'date_completed' in colset:
+            sql += f" ORDER BY{order_bias} date_completed DESC NULLS LAST"
+        else:
+            sql += f" ORDER BY{order_bias} id DESC"
+        sql += " LIMIT :limit"
         params["limit"] = min(max(limit, 1), 100)
         rows = session.execute(text(sql), params).mappings().all()
         items = [dict(r) for r in rows]
@@ -489,11 +523,29 @@ def get_well_by_id(well_id: str) -> Dict[str, Any]:
             )).scalar()
         except Exception:
             ok = False
-        base_select = (
-            "SELECT wr.id as id, wr.owner_name as name, wr.county, "
-            "ST_Y(wr.geom) as lat, ST_X(wr.geom) as lon, wr.depth_ft, "
-            "COALESCE(wr.location_error_m,0) as location_error_m"
-        )
+        # Discover available columns for detail selection
+        try:
+            cols = session.execute(
+                text("""
+                    SELECT column_name FROM information_schema.columns
+                    WHERE table_schema='public' AND table_name='well_reports'
+                """)
+            ).scalars().all()
+            colset = set(cols)
+        except Exception:
+            colset = set()
+        name_expr = 'wr.owner_name' if 'owner_name' in colset else ('wr.name' if 'name' in colset else "''")
+        base_select = f"SELECT wr.id as id, {name_expr} as name"
+        if 'county' in colset:
+            base_select += ", wr.county"
+        if 'geom' in colset:
+            base_select += ", ST_Y(wr.geom) as lat, ST_X(wr.geom) as lon"
+        if 'depth_ft' in colset:
+            base_select += ", wr.depth_ft"
+        if 'location_error_m' in colset:
+            base_select += ", COALESCE(wr.location_error_m,0) as location_error_m"
+        else:
+            base_select += ", 0 as location_error_m"
         if ok:
             base_select += ", (wl.gwdb_id IS NOT NULL) as gwdb_available, gw.total_depth_ft as gwdb_depth_ft"
             joins = " FROM well_reports wr LEFT JOIN well_links wl ON wl.sdr_id = wr.id LEFT JOIN gwdb_wells gw ON gw.id = wl.gwdb_id"
