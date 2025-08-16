@@ -141,22 +141,59 @@ def upsert_sdr_from_twdb_raw(raw_dir: str, db_url: str, limit: Optional[int] = N
 
     # Build a small lookup for completion fields (depth/date)
     completion_by_id: Dict[str, Dict[str, Optional[str]]] = {}
+    def _detect_tracking_key(row_norm_keys: List[str]) -> Optional[str]:
+        # Preferred exact candidates (normalized)
+        preferred = [
+            _normalize_key(k) for k in (
+                "WellReportTrackingNumber",
+                "Well Report Tracking Number",
+                "TrackingNumber",
+                "TRK_NO",
+                "TRK NO",
+                "ReportTrackingNumber",
+                "Report Tracking Number",
+                "Tracking No",
+                "Tracking_No",
+                "ReportTrackingNo",
+                "Report Tracking No",
+            )
+        ]
+        keys_set = set(row_norm_keys)
+        for cand in preferred:
+            if cand in keys_set:
+                return cand
+        # Heuristic fallback: any key that contains both "tracking" and "number"
+        for k in row_norm_keys:
+            if "tracking" in k and ("number" in k or k.endswith("no") or "trackingno" in k):
+                return k
+        # Heuristic fallback: any key that contains "trk" and "no"
+        for k in row_norm_keys:
+            if "trk" in k and "no" in k:
+                return k
+        return None
+
+    comp_tracking_key: Optional[str] = None
     if os.path.exists(completion_path):
         for row in _read_pipe_delimited(completion_path):
             row_norm: Dict[str, Any] = {_normalize_key(k): v for k, v in row.items()}
-            tid = _first_nonempty_norm(row_norm, [
-                "TrackingNumber",
-                "TRK_NO",
-                "ReportTrackingNumber",
-                "Report Tracking Number",
-                "TRK NO",
-            ])
+            if comp_tracking_key is None:
+                comp_tracking_key = _detect_tracking_key(list(row_norm.keys()))
+            tid = None if comp_tracking_key is None else row_norm.get(comp_tracking_key)
+            if tid is None or str(tid).strip() == "":
+                tid = _first_nonempty_norm(row_norm, [
+                    "TrackingNumber",
+                    "TRK_NO",
+                    "ReportTrackingNumber",
+                    "Report Tracking Number",
+                    "TRK NO",
+                ])
             if not tid:
                 continue
             depth = _first_nonempty_norm(row_norm, [
                 "TotalDepth",
                 "CompletionDepth",
                 "Depth",
+                "PumpDepth",
             ])
             date_completed = _first_nonempty_norm(row_norm, [
                 "CompletionDate",
@@ -203,32 +240,37 @@ def upsert_sdr_from_twdb_raw(raw_dir: str, db_url: str, limit: Optional[int] = N
 
     skipped_missing_id = 0
     scanned_rows = 0
+    well_tracking_key: Optional[str] = None
     for row in _read_pipe_delimited(well_data_path):
         scanned_rows += 1
         row_norm: Dict[str, Any] = {_normalize_key(k): v for k, v in row.items()}
-        tid = _first_nonempty_norm(row_norm, [
-            "TrackingNumber",
-            "TRK_NO",
-            "ReportTrackingNumber",
-            "Report Tracking Number",
-            "TRK NO",
-        ])
+        if well_tracking_key is None:
+            well_tracking_key = _detect_tracking_key(list(row_norm.keys()))
+        tid = None if well_tracking_key is None else row_norm.get(well_tracking_key)
+        if tid is None or str(tid).strip() == "":
+            tid = _first_nonempty_norm(row_norm, [
+                "TrackingNumber",
+                "TRK_NO",
+                "ReportTrackingNumber",
+                "Report Tracking Number",
+                "TRK NO",
+            ])
         if not tid:
             skipped_missing_id += 1
             continue
 
-        owner = _first_nonempty_norm(row_norm, ["OwnerName", "Owner"]) or None
-        street = _first_nonempty_norm(row_norm, ["StreetAddress", "Address", "Addr1", "Addr 1", "Addr"]) or ""
-        city = _first_nonempty_norm(row_norm, ["City", "CityName"]) or ""
-        zipc = _first_nonempty_norm(row_norm, ["Zip", "ZIP", "ZipCode", "ZIP Code"]) or None
+        owner = _first_nonempty_norm(row_norm, ["OwnerName", "Owner", "Owner Name"]) or None
+        street = _first_nonempty_norm(row_norm, ["WellAddress1", "StreetAddress", "Address", "Addr1", "Addr 1", "Addr"]) or ""
+        city = _first_nonempty_norm(row_norm, ["WellCity", "City", "CityName"]) or ""
+        zipc = _first_nonempty_norm(row_norm, ["WellZip", "Zip", "ZIP", "ZipCode", "ZIP Code"]) or None
         address = ", ".join([p for p in [street, city, (zipc or "")] if p]).strip(", ") or None
-        county = _first_nonempty_norm(row_norm, ["County", "CountyName"]) or None
+        county = _first_nonempty_norm(row_norm, ["County", "CountyName", "County Name"]) or None
 
         lat = _parse_float(_first_nonempty_norm(row_norm, [
-            "Latitude", "LatitudeDD", "LatDD", "Lat", "WellLatitude", "Latitude (Decimal Degrees)"
+            "CoordDDLat", "Latitude", "LatitudeDD", "LatDD", "Lat", "WellLatitude", "Latitude (Decimal Degrees)"
         ]))
         lon = _parse_float(_first_nonempty_norm(row_norm, [
-            "Longitude", "LongitudeDD", "LongDD", "Lon", "WellLongitude", "Longitude (Decimal Degrees)"
+            "CoordDDLong", "Longitude", "LongitudeDD", "LongDD", "Lon", "WellLongitude", "Longitude (Decimal Degrees)"
         ]))
 
         comp = completion_by_id.get(tid, {})
