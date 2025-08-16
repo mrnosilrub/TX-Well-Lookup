@@ -11,6 +11,7 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
   </form>
   <div id="results" style="margin-top:12px"></div>
   <script is:inline>
+    (function(){
     const form = document.getElementById('search-form');
     const container = document.currentScript.closest('section');
     const results = document.getElementById('results');
@@ -129,6 +130,7 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
     inputQ.addEventListener('input', onFilterChange);
     inputMin.addEventListener('input', onFilterChange);
     inputMax.addEventListener('input', onFilterChange);
+    })();
   </script>
 </section>
 
