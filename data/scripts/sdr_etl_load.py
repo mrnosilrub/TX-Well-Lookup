@@ -26,6 +26,7 @@ import sys
 import json
 import os
 import time
+from datetime import datetime
 from collections import defaultdict
 from typing import Dict, Iterable, List, Tuple
 import glob
@@ -103,12 +104,26 @@ def coerce_int(val: str) -> int | None:
 
 
 def coerce_date(val: str) -> str | None:
-    # Accept Y-M-D variants; leave as text for DB DATE cast
-    t = val.strip()
+    t = (val or "").strip()
     if not t:
         return None
-    # Let DB parse; otherwise could add python dateutil here
-    return t
+    # Reject obvious non-date numeric-only strings
+    if t.isdigit():
+        return None
+    # Try common date formats and normalize to YYYY-MM-DD
+    fmts = [
+        "%Y-%m-%d", "%Y/%m/%d",
+        "%m/%d/%Y", "%m-%d-%Y",
+        "%m/%d/%y", "%m-%d-%y",
+        "%d-%b-%Y", "%d %b %Y",
+    ]
+    for f in fmts:
+        try:
+            dt = datetime.strptime(t, f)
+            return dt.strftime("%Y-%m-%d")
+        except Exception:
+            pass
+    return None
 
 
 def within_tx(lat: float | None, lon: float | None) -> bool:
