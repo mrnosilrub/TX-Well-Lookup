@@ -294,6 +294,22 @@ def etl(source_dir: str, aliases_path: str, database_url: str, batch_size: int =
                 return v
             return (value or "").strip() if isinstance(value, str) else value
 
+        def ensure_parent_ids(conn, id_rows: List[Tuple]) -> None:
+            # Ensure parent well_reports rows exist for FK before child inserts
+            if not id_rows:
+                return
+            unique_ids = sorted({r[0] for r in id_rows if r and r[0]})
+            if not unique_ids:
+                return
+            upsert(conn,
+                """
+                INSERT INTO well_reports (id) VALUES (%s)
+                ON CONFLICT (id) DO NOTHING
+                """,
+                [(i,) for i in unique_ids],
+                batch_size,
+            )
+
         def upsert_child(file_name: str, table: str, field_map: List[Tuple[str, List[str]]], pk_norm_col: str, pk_aliases: List[str]):
             path = os.path.join(source_dir, file_name)
             if not os.path.exists(path):
@@ -323,6 +339,8 @@ def etl(source_dir: str, aliases_path: str, database_url: str, batch_size: int =
                     placeholders = ", ".join(["%s"] * len(values))
                     cols = ", ".join(["sdr_id", pk_norm_col] + [t for t, _ in field_map])
                     conflict = ", ".join(["sdr_id", pk_norm_col])
+                    # Ensure parent ids exist to satisfy FK
+                    ensure_parent_ids(conn, [(r[0],) for r in rows_buf])
                     sql = f"INSERT INTO {table} ({cols}) VALUES ({placeholders}) ON CONFLICT ({conflict}) DO NOTHING"
                     totals[table] += upsert(conn, sql, rows_buf, batch_size)
                     rows_buf.clear()
@@ -330,6 +348,7 @@ def etl(source_dir: str, aliases_path: str, database_url: str, batch_size: int =
                 placeholders = ", ".join(["%s"] * len(rows_buf[0]))
                 cols = ", ".join(["sdr_id", pk_norm_col] + [t for t, _ in field_map])
                 conflict = ", ".join(["sdr_id", pk_norm_col])
+                ensure_parent_ids(conn, [(r[0],) for r in rows_buf])
                 sql = f"INSERT INTO {table} ({cols}) VALUES ({placeholders}) ON CONFLICT ({conflict}) DO NOTHING"
                 totals[table] += upsert(conn, sql, rows_buf, batch_size)
             log_step(file_name.replace('.txt',''), totals[table], t0)
