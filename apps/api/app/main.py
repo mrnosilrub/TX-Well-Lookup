@@ -174,36 +174,36 @@ def search_endpoint(q: str | None = None, county: str | None = None, limit: int 
             if q:
                 like_parts = []
                 if 'owner_name' in colset:
-                    like_parts.append("owner_name ILIKE :q")
+                    like_parts.append("wr.owner_name ILIKE :q")
                 if 'address' in colset:
-                    like_parts.append("address ILIKE :q")
+                    like_parts.append("wr.address ILIKE :q")
                 if not like_parts and 'name' in colset:
-                    like_parts.append("name ILIKE :q")
+                    like_parts.append("wr.name ILIKE :q")
                 if like_parts:
                     where.append("(" + " OR ".join(like_parts) + ")")
                     params["q"] = f"%{q}%"
             if county and 'county' in colset:
-                where.append("county = :county")
+                where.append("wr.county = :county")
                 params["county"] = county
             if depth_min is not None and 'depth_ft' in colset:
-                where.append("depth_ft >= :depth_min")
+                where.append("wr.depth_ft >= :depth_min")
                 params["depth_min"] = depth_min
             if depth_max is not None and 'depth_ft' in colset:
-                where.append("depth_ft <= :depth_max")
+                where.append("wr.depth_ft <= :depth_max")
                 params["depth_max"] = depth_max
             if lat is not None and lon is not None and 'geom' in colset:
-                where.append("ST_DWithin(geom, ST_SetSRID(ST_MakePoint(:lon,:lat),4326)::geography, :radius)")
+                where.append("ST_DWithin(wr.geom, ST_SetSRID(ST_MakePoint(:lon,:lat),4326)::geography, :radius)")
                 params.update({"lat": lat, "lon": lon, "radius": radius_m})
 
             # Build select list based on available columns
-            name_expr = 'owner_name' if 'owner_name' in colset else ('name' if 'name' in colset else "''")
-            select_cols = f"well_reports.id as id, {name_expr} as name"
+            name_expr = 'wr.owner_name' if 'owner_name' in colset else ('wr.name' if 'name' in colset else "''")
+            select_cols = f"wr.id as id, {name_expr} as name"
             if 'county' in colset:
-                select_cols += ", county"
+                select_cols += ", wr.county as county"
             if 'geom' in colset:
-                select_cols += ", ST_Y(geom) as lat, ST_X(geom) as lon"
+                select_cols += ", ST_Y(wr.geom) as lat, ST_X(wr.geom) as lon"
             if 'depth_ft' in colset:
-                select_cols += ", depth_ft"
+                select_cols += ", wr.depth_ft as depth_ft"
             join_clause = ""
             order_bias = ""
             if include_gwdb:
@@ -217,18 +217,18 @@ def search_endpoint(q: str | None = None, county: str | None = None, limit: int 
                 if ok:
                     select_cols += ", (wl.gwdb_id IS NOT NULL) as gwdb_available, gw.total_depth_ft as gwdb_depth_ft, gw.aquifer as aquifer"
                     join_clause = (
-                        " LEFT JOIN well_links wl ON wl.sdr_id = well_reports.id"
+                        " LEFT JOIN well_links wl ON wl.sdr_id = wr.id"
                         " LEFT JOIN gwdb_wells gw ON gw.id = wl.gwdb_id"
                     )
                     order_bias = " (wl.gwdb_id IS NOT NULL) DESC,"
-            sql = f"SELECT {select_cols} FROM well_reports{join_clause}"
+            sql = f"SELECT {select_cols} FROM well_reports wr{join_clause}"
             if where:
                 sql += " WHERE " + " AND ".join(where)
             # Order by date when available, else by id
             if 'date_completed' in colset:
-                sql += f" ORDER BY{order_bias} date_completed DESC NULLS LAST"
+                sql += f" ORDER BY{order_bias} wr.date_completed DESC NULLS LAST"
             else:
-                sql += f" ORDER BY{order_bias} id DESC"
+                sql += f" ORDER BY{order_bias} wr.id DESC"
             sql += " LIMIT :limit"
             params["limit"] = min(max(limit, 1), 100)
             rows = session.execute(text(sql), params).mappings().all()
