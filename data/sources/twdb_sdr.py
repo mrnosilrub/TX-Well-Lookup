@@ -11,7 +11,7 @@ Source (reference): https://www.twdb.texas.gov/groundwater/data/drillersdb.asp
 import csv
 import os
 from datetime import datetime
-from typing import Dict, List, Optional, Iterable
+from typing import Dict, List, Optional, Iterable, Any
 
 import psycopg2
 from psycopg2.extras import execute_batch
@@ -106,6 +106,22 @@ def _parse_date_iso(value: Optional[str]) -> Optional[str]:
     return None
 
 
+def _normalize_key(key: str) -> str:
+    """Lowercase alphanumerics only (remove spaces/punct) for robust header matching."""
+    return "".join(ch for ch in str(key).lower() if ch.isalnum())
+
+
+def _first_nonempty_norm(row_norm: Dict[str, Any], keys: List[str]) -> Optional[str]:
+    for k in keys:
+        v = row_norm.get(_normalize_key(k))
+        if v is None:
+            continue
+        s = str(v).strip()
+        if s != "":
+            return s
+    return None
+
+
 def upsert_sdr_from_twdb_raw(raw_dir: str, db_url: str, limit: Optional[int] = None) -> int:
     """
     Ingest SDR from official TWDB pipe-delimited files located in `raw_dir`.
@@ -127,22 +143,28 @@ def upsert_sdr_from_twdb_raw(raw_dir: str, db_url: str, limit: Optional[int] = N
     completion_by_id: Dict[str, Dict[str, Optional[str]]] = {}
     if os.path.exists(completion_path):
         for row in _read_pipe_delimited(completion_path):
-            tid = _first_nonempty(row, [
+            row_norm: Dict[str, Any] = {_normalize_key(k): v for k, v in row.items()}
+            tid = _first_nonempty_norm(row_norm, [
                 "TrackingNumber",
                 "TRK_NO",
                 "ReportTrackingNumber",
+                "Report Tracking Number",
+                "TRK NO",
             ])
             if not tid:
                 continue
-            depth = _first_nonempty(row, [
+            depth = _first_nonempty_norm(row_norm, [
                 "TotalDepth",
                 "CompletionDepth",
                 "Depth",
             ])
-            date_completed = _first_nonempty(row, [
+            date_completed = _first_nonempty_norm(row_norm, [
                 "CompletionDate",
                 "CompletedDate",
                 "DateCompleted",
+                "Completion Date",
+                "Completed Date",
+                "Date Completed",
             ])
             completion_by_id[tid] = {
                 "depth_ft": depth,
@@ -179,27 +201,34 @@ def upsert_sdr_from_twdb_raw(raw_dir: str, db_url: str, limit: Optional[int] = N
             conn.commit()
         return len(rows)
 
+    skipped_missing_id = 0
+    scanned_rows = 0
     for row in _read_pipe_delimited(well_data_path):
-        tid = _first_nonempty(row, [
+        scanned_rows += 1
+        row_norm: Dict[str, Any] = {_normalize_key(k): v for k, v in row.items()}
+        tid = _first_nonempty_norm(row_norm, [
             "TrackingNumber",
             "TRK_NO",
             "ReportTrackingNumber",
+            "Report Tracking Number",
+            "TRK NO",
         ])
         if not tid:
+            skipped_missing_id += 1
             continue
 
-        owner = _first_nonempty(row, ["OwnerName", "Owner"]) or None
-        street = _first_nonempty(row, ["StreetAddress", "Address", "Addr1"]) or ""
-        city = _first_nonempty(row, ["City"]) or ""
-        zipc = _first_nonempty(row, ["Zip", "ZIP"])
+        owner = _first_nonempty_norm(row_norm, ["OwnerName", "Owner"]) or None
+        street = _first_nonempty_norm(row_norm, ["StreetAddress", "Address", "Addr1", "Addr 1", "Addr"]) or ""
+        city = _first_nonempty_norm(row_norm, ["City", "CityName"]) or ""
+        zipc = _first_nonempty_norm(row_norm, ["Zip", "ZIP", "ZipCode", "ZIP Code"]) or None
         address = ", ".join([p for p in [street, city, (zipc or "")] if p]).strip(", ") or None
-        county = _first_nonempty(row, ["County", "CountyName"]) or None
+        county = _first_nonempty_norm(row_norm, ["County", "CountyName"]) or None
 
-        lat = _parse_float(_first_nonempty(row, [
-            "Latitude", "LatitudeDD", "LatDD", "Lat", "WellLatitude"
+        lat = _parse_float(_first_nonempty_norm(row_norm, [
+            "Latitude", "LatitudeDD", "LatDD", "Lat", "WellLatitude", "Latitude (Decimal Degrees)"
         ]))
-        lon = _parse_float(_first_nonempty(row, [
-            "Longitude", "LongitudeDD", "LongDD", "Lon", "WellLongitude"
+        lon = _parse_float(_first_nonempty_norm(row_norm, [
+            "Longitude", "LongitudeDD", "LongDD", "Lon", "WellLongitude", "Longitude (Decimal Degrees)"
         ]))
 
         comp = completion_by_id.get(tid, {})
@@ -224,6 +253,11 @@ def upsert_sdr_from_twdb_raw(raw_dir: str, db_url: str, limit: Optional[int] = N
                 break
 
     total += flush(batch)
+    # Light telemetry in logs to help diagnose zero-ingest cases
+    try:
+        print(f"SDR parsed rows scanned={scanned_rows}, skipped_missing_id={skipped_missing_id}, upserted={total}")
+    except Exception:
+        pass
     return total
 
 
