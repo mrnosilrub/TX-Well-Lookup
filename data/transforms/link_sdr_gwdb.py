@@ -18,7 +18,7 @@ def link_within_distance(db_url: str, radius_m: float = 50.0) -> int:
                        GREATEST(0, 1 - (ST_Distance(s.geom::geography, g.geom::geography) / %s)) AS match_score
                 FROM well_reports s
                 JOIN gwdb_wells g
-                  ON ST_DWithin(s.geom::geography, g.geom::geography, %s)
+                  ON s.geom IS NOT NULL AND g.geom IS NOT NULL AND ST_DWithin(s.geom::geography, g.geom::geography, %s)
                 ON CONFLICT (sdr_id, gwdb_id) DO UPDATE SET match_score = EXCLUDED.match_score
                 """,
                 (radius_m, radius_m),

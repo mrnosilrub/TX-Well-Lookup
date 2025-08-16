@@ -10,8 +10,8 @@ Source (reference): https://www.twdb.texas.gov/groundwater/data/drillersdb.asp
 
 import csv
 import os
+from datetime import datetime
 from typing import Dict, List, Optional, Iterable
-import csv
 
 import psycopg2
 from psycopg2.extras import execute_batch
@@ -27,11 +27,19 @@ def upsert_sdr_from_csv(csv_path: str, db_url: str) -> int:
         with conn.cursor() as cur:
             sql = (
                 "INSERT INTO well_reports (id, owner_name, address, county, depth_ft, date_completed, geom) "
-                "VALUES (%(id)s, %(owner_name)s, %(address)s, %(county)s, %(depth_ft)s, %(date_completed)s, "
-                "ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)) "
-                "ON CONFLICT (id) DO UPDATE SET owner_name = EXCLUDED.owner_name, address = EXCLUDED.address, "
-                "county = EXCLUDED.county, depth_ft = EXCLUDED.depth_ft, date_completed = EXCLUDED.date_completed, "
-                "geom = EXCLUDED.geom"
+                "VALUES (\n"
+                "  %(id)s, %(owner_name)s, %(address)s, %(county)s, %(depth_ft)s::int, NULLIF(%(date_completed)s, '')::date,\n"
+                "  CASE WHEN %(lat)s IS NOT NULL AND %(lon)s IS NOT NULL\n"
+                "       THEN ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)\n"
+                "       ELSE NULL END\n"
+                ")\n"
+                "ON CONFLICT (id) DO UPDATE SET\n"
+                "  owner_name = EXCLUDED.owner_name,\n"
+                "  address = EXCLUDED.address,\n"
+                "  county = EXCLUDED.county,\n"
+                "  depth_ft = EXCLUDED.depth_ft,\n"
+                "  date_completed = EXCLUDED.date_completed,\n"
+                "  geom = EXCLUDED.geom"
             )
             execute_batch(cur, sql, rows, page_size=500)
         conn.commit()
@@ -61,6 +69,26 @@ def _parse_float(value: Optional[str]) -> Optional[float]:
         return float(str(value).strip())
     except Exception:
         return None
+
+
+def _parse_date_iso(value: Optional[str]) -> Optional[str]:
+    """Parse a date string in common formats to ISO (YYYY-MM-DD). Returns None on failure."""
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    # Try a few known formats
+    for fmt in ("%Y-%m-%d", "%m/%d/%Y", "%m/%d/%y", "%Y/%m/%d", "%d-%b-%Y"):
+        try:
+            dt = datetime.strptime(text, fmt)
+            return dt.strftime("%Y-%m-%d")
+        except Exception:
+            continue
+    # Fallback: return original if it looks like ISO already
+    if len(text) == 10 and text[4] == "-" and text[7] == "-":
+        return text
+    return None
 
 
 def upsert_sdr_from_twdb_raw(raw_dir: str, db_url: str, limit: Optional[int] = None) -> int:
@@ -118,11 +146,19 @@ def upsert_sdr_from_twdb_raw(raw_dir: str, db_url: str, limit: Optional[int] = N
             with conn.cursor() as cur:
                 sql = (
                     "INSERT INTO well_reports (id, owner_name, address, county, depth_ft, date_completed, geom) "
-                    "VALUES (%(id)s, %(owner_name)s, %(address)s, %(county)s, %(depth_ft)s, %(date_completed)s, "
-                    "ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)) "
-                    "ON CONFLICT (id) DO UPDATE SET owner_name = EXCLUDED.owner_name, address = EXCLUDED.address, "
-                    "county = EXCLUDED.county, depth_ft = EXCLUDED.depth_ft, date_completed = EXCLUDED.date_completed, "
-                    "geom = EXCLUDED.geom"
+                    "VALUES (\n"
+                    "  %(id)s, %(owner_name)s, %(address)s, %(county)s, %(depth_ft)s::int, NULLIF(%(date_completed)s, '')::date,\n"
+                    "  CASE WHEN %(lat)s IS NOT NULL AND %(lon)s IS NOT NULL\n"
+                    "       THEN ST_SetSRID(ST_MakePoint(%(lon)s, %(lat)s), 4326)\n"
+                    "       ELSE NULL END\n"
+                    ")\n"
+                    "ON CONFLICT (id) DO UPDATE SET\n"
+                    "  owner_name = EXCLUDED.owner_name,\n"
+                    "  address = EXCLUDED.address,\n"
+                    "  county = EXCLUDED.county,\n"
+                    "  depth_ft = EXCLUDED.depth_ft,\n"
+                    "  date_completed = EXCLUDED.date_completed,\n"
+                    "  geom = EXCLUDED.geom"
                 )
                 execute_batch(cur, sql, rows, page_size=500)
             conn.commit()
@@ -153,7 +189,7 @@ def upsert_sdr_from_twdb_raw(raw_dir: str, db_url: str, limit: Optional[int] = N
 
         comp = completion_by_id.get(tid, {})
         depth_ft = _parse_float(comp.get("depth_ft"))
-        date_completed = comp.get("date_completed")
+        date_completed = _parse_date_iso(comp.get("date_completed"))
 
         batch.append({
             "id": tid,

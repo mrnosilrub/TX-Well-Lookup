@@ -7,6 +7,7 @@ Nightly snapshot job that (for now):
 """
 
 import os
+import time
 from pathlib import Path
 
 from data.sources.twdb_sdr import upsert_sdr_from_csv, upsert_sdr_from_twdb_raw
@@ -32,13 +33,23 @@ def main() -> int:
         print(f"Missing GWDB sample: {gwdb_csv}")
         return 2
 
+    t0 = time.time()
     if raw_sdr_dir and os.path.isdir(raw_sdr_dir):
         n_sdr = upsert_sdr_from_twdb_raw(raw_sdr_dir, db_url, limit=None)
+        sdr_source = "twdb_raw"
     else:
         n_sdr = upsert_sdr_from_csv(str(sdr_csv), db_url)
+        sdr_source = "sample_csv"
+    t1 = time.time()
     n_gwdb = upsert_gwdb_from_csv(str(gwdb_csv), db_url)
+    t2 = time.time()
     n_links = link_within_distance(db_url, radius_m=50.0)
-    print(f"SDR upserted: {n_sdr}; GWDB upserted: {n_gwdb}; Links: {n_links}")
+    t3 = time.time()
+    print(
+        f"SDR upserted: {n_sdr} (source={sdr_source}, {t1 - t0:.2f}s); "
+        f"GWDB upserted: {n_gwdb} ({t2 - t1:.2f}s); "
+        f"Links: {n_links} ({t3 - t2:.2f}s)"
+    )
     return 0
 
 
