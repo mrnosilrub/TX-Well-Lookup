@@ -197,61 +197,66 @@ def etl(source_dir: str, aliases_path: str, database_url: str, batch_size: int =
             log_step("WellCompletion", totals["well_reports_enrich"], t0)
 
         # Child tables loaders (examples shown; pattern can be replicated for all)
-        def upsert_child(file_name: str, table: str, field_map: List[Tuple[str, str]], pk: List[str]):
+        def upsert_child(file_name: str, table: str, field_map: List[Tuple[str, List[str]]], pk_aliases: List[str]):
             path = os.path.join(source_dir, file_name)
             if not os.path.exists(path):
                 return
             t0 = time.time()
             hdr = aliases.get(file_name, {})
             id_key = pick_first(hdr, "TrackingNumber", "ReportTrackingNumber", "TRK_NO")
+            pk_key = pick_first(hdr, *pk_aliases)
             rows_buf: List[Tuple] = []
+            seq_by_id: Dict[str, int] = defaultdict(int)
             for r in parse_rows(path):
                 sdr_id = (r.get(id_key or "", "").strip() if id_key else "")
                 if not sdr_id:
                     continue
-                values: List[object] = [sdr_id]
-                for target, source in field_map:
-                    values.append(r.get(source, "").strip())
+                # primary key value from file (if present), else generate per-sdr sequence
+                pk_val = r.get(pk_key or "", "").strip() if pk_key else ""
+                if pk_val == "":
+                    seq_by_id[sdr_id] += 1
+                    pk_val = str(seq_by_id[sdr_id])
+                values: List[object] = [sdr_id, pk_val]
+                for target, candidates in field_map:
+                    src = pick_first(hdr, *candidates) or ""
+                    values.append(r.get(src, "").strip())
                 rows_buf.append(tuple(values))
                 if len(rows_buf) >= batch_size:
                     placeholders = ", ".join(["%s"] * len(values))
-                    cols = ", ".join(["sdr_id"] + [t for t, _ in field_map])
-                    conflict = ", ".join(["sdr_id"] + pk)
+                    cols = ", ".join(["sdr_id", (pk_aliases[0] if pk_key else "seq_no")] + [t for t, _ in field_map])
+                    conflict = ", ".join(["sdr_id", (pk_aliases[0] if pk_key else "seq_no")])
                     sql = f"INSERT INTO {table} ({cols}) VALUES ({placeholders}) ON CONFLICT ({conflict}) DO NOTHING"
                     totals[table] += upsert(conn, sql, rows_buf, batch_size)
                     rows_buf.clear()
             if rows_buf:
                 placeholders = ", ".join(["%s"] * len(rows_buf[0]))
-                cols = ", ".join(["sdr_id"] + [t for t, _ in field_map])
-                conflict = ", ".join(["sdr_id"] + pk)
+                cols = ", ".join(["sdr_id", (pk_aliases[0] if pk_key else "seq_no")] + [t for t, _ in field_map])
+                conflict = ", ".join(["sdr_id", (pk_aliases[0] if pk_key else "seq_no")])
                 sql = f"INSERT INTO {table} ({cols}) VALUES ({placeholders}) ON CONFLICT ({conflict}) DO NOTHING"
                 totals[table] += upsert(conn, sql, rows_buf, batch_size)
             log_step(file_name.replace('.txt',''), totals[table], t0)
 
         # Examples: replicate as needed for full coverage
         upsert_child("WellBoreHole.txt", "well_boreholes", [
-            ("borehole_no", "BoreHoleNo"),
-            ("start_depth_ft", "StartDepth"),
-            ("end_depth_ft", "EndDepth"),
-            ("diameter_in", "Diameter"),
-            ("notes", "Notes"),
-        ], pk=["borehole_no"])
+            ("start_depth_ft", ["StartDepth", "StartDepthFt", "FromDepth"]),
+            ("end_depth_ft", ["EndDepth", "EndDepthFt", "ToDepth"]),
+            ("diameter_in", ["Diameter", "DiameterIn", "BoreDiameter"]),
+            ("notes", ["Notes", "Remarks"]),
+        ], pk_aliases=["BoreHoleNo", "BoreholeNo", "BoreHoleNumber", "SeqNo", "Sequence"])
 
         upsert_child("WellCasing.txt", "well_casings", [
-            ("casing_no", "CasingNo"),
-            ("top_ft", "TopDepth"),
-            ("bottom_ft", "BottomDepth"),
-            ("diameter_in", "Diameter"),
-            ("material", "Material"),
-        ], pk=["casing_no"])
+            ("top_ft", ["TopDepth", "Top", "TopFt"]),
+            ("bottom_ft", ["BottomDepth", "Bottom", "BottomFt"]),
+            ("diameter_in", ["Diameter", "DiameterIn"]),
+            ("material", ["Material", "CasingMaterial"]),
+        ], pk_aliases=["CasingNo", "CasingNumber", "SeqNo", "Sequence"])
 
         upsert_child("WellFilter.txt", "well_filters", [
-            ("filter_no", "FilterNo"),
-            ("top_ft", "TopDepth"),
-            ("bottom_ft", "BottomDepth"),
-            ("size", "Size"),
-            ("material", "Material"),
-        ], pk=["filter_no"])
+            ("top_ft", ["TopDepth", "Top", "TopFt"]),
+            ("bottom_ft", ["BottomDepth", "Bottom", "BottomFt"]),
+            ("size", ["Size", "SlotSize", "FilterSize"]),
+            ("material", ["Material", "FilterMaterial"]),
+        ], pk_aliases=["FilterNo", "FilterNumber", "SeqNo", "Sequence"])
 
         # Commit once at end for better throughput
         conn.commit()
