@@ -57,7 +57,6 @@ jobs:
             echo "Attempting SDR web fetch..."
             python -c "import os; from data.sources.sdr_web_fetch import ensure_sdr_from_web as f; d='data/raw_data/SDRDownload/SDRDownload'; f(dest_dir=d, zip_url=os.environ.get('SDR_ZIP_URL'), base_url=os.environ.get('SDR_BASE_URL')); print('Downloaded SDR to', d)"
             ls -la data/raw_data/SDRDownload/SDRDownload || true
-            ls -la data/raw_data/SDRDownload/SDRDownload/SDRDownload || true
             echo "RAW_SDR_DIR=$GITHUB_WORKSPACE/data/raw_data/SDRDownload/SDRDownload" >> "$GITHUB_ENV"
           else
             echo "No RAW_SDR_BUCKET or SDR_ZIP_URL/SDR_BASE_URL provided; skipping SDR fetch"
