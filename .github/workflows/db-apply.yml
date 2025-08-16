@@ -12,6 +12,10 @@ on:
           - dev
           - staging
           - prod
+      etl_batch_size:
+        description: ETL batch size (rows per execute_batch)
+        required: false
+        default: '5000'
 
 permissions:
   contents: read
@@ -138,7 +142,7 @@ jobs:
         run: |
           # For safety, only run if alias file and source dir are present (from latest snapshot)
           if [ -f "$ALIASES_PATH" ] && [ -d "$SOURCE_DIR" ]; then \
-            python3 data/scripts/sdr_etl_load.py --source-dir "$SOURCE_DIR" --aliases "$ALIASES_PATH" --database-url "$DATABASE_URL" --batch-size 1000; \
+            python3 data/scripts/sdr_etl_load.py --source-dir "$SOURCE_DIR" --aliases "$ALIASES_PATH" --database-url "$DATABASE_URL" --batch-size "${{ inputs.etl_batch_size }}"; \
           else \
             echo "DS4 ETL skipped (missing source/aliases)"; \
           fi
