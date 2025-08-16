@@ -22,7 +22,7 @@ jobs:
       - name: Build
         working-directory: apps/web
         env:
-          PUBLIC_BASE_PATH: "/TX-Well-Lookup" # change if your Pages path differs
+          PUBLIC_BASE_PATH: "/" # custom domain uses root
           PUBLIC_API_URL: "https://txwl-api.onrender.com"
         run: npm run build
       - name: Upload artifact
