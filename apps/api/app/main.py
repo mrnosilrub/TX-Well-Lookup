@@ -174,13 +174,20 @@ def search_endpoint(q: str | None = None, county: str | None = None, limit: int 
         join_clause = ""
         order_bias = ""
         if include_gwdb:
-            # Bias linked wells to top when requested and surface GWDB depth/aquifer if available
-            select_cols += ", (wl.gwdb_id IS NOT NULL) as gwdb_available, gw.total_depth_ft as gwdb_depth_ft, gw.aquifer as aquifer"
-            join_clause = (
-                " LEFT JOIN well_links wl ON wl.sdr_id = well_reports.id"
-                " LEFT JOIN gwdb_wells gw ON gw.id = wl.gwdb_id"
-            )
-            order_bias = " (wl.gwdb_id IS NOT NULL) DESC,"
+            # Only join if GWDB tables exist; otherwise silently skip GWDB fields
+            try:
+                ok = session.execute(text(
+                    "SELECT (to_regclass('public.well_links') IS NOT NULL) AND (to_regclass('public.gwdb_wells') IS NOT NULL) AS ok"
+                )).scalar()
+            except Exception:
+                ok = False
+            if ok:
+                select_cols += ", (wl.gwdb_id IS NOT NULL) as gwdb_available, gw.total_depth_ft as gwdb_depth_ft, gw.aquifer as aquifer"
+                join_clause = (
+                    " LEFT JOIN well_links wl ON wl.sdr_id = well_reports.id"
+                    " LEFT JOIN gwdb_wells gw ON gw.id = wl.gwdb_id"
+                )
+                order_bias = " (wl.gwdb_id IS NOT NULL) DESC,"
         sql = f"SELECT {select_cols} FROM well_reports{join_clause}"
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -475,22 +482,24 @@ def get_well_by_id(well_id: str) -> Dict[str, Any]:
     with get_db_session() as session:
         if session is None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="DB session unavailable")
-        sql = """
-        SELECT wr.id as id,
-               wr.owner_name as name,
-               wr.county,
-               ST_Y(wr.geom) as lat,
-               ST_X(wr.geom) as lon,
-               wr.depth_ft,
-               COALESCE(wr.location_error_m,0) as location_error_m,
-               (wl.gwdb_id IS NOT NULL) as gwdb_available,
-               gw.total_depth_ft as gwdb_depth_ft
-        FROM well_reports wr
-        LEFT JOIN well_links wl ON wl.sdr_id = wr.id
-        LEFT JOIN gwdb_wells gw ON gw.id = wl.gwdb_id
-        WHERE wr.id = :rid
-        LIMIT 1
-        """
+        # Build query, joining GWDB tables only if they exist
+        try:
+            ok = session.execute(text(
+                "SELECT (to_regclass('public.well_links') IS NOT NULL) AND (to_regclass('public.gwdb_wells') IS NOT NULL) AS ok"
+            )).scalar()
+        except Exception:
+            ok = False
+        base_select = (
+            "SELECT wr.id as id, wr.owner_name as name, wr.county, "
+            "ST_Y(wr.geom) as lat, ST_X(wr.geom) as lon, wr.depth_ft, "
+            "COALESCE(wr.location_error_m,0) as location_error_m"
+        )
+        if ok:
+            base_select += ", (wl.gwdb_id IS NOT NULL) as gwdb_available, gw.total_depth_ft as gwdb_depth_ft"
+            joins = " FROM well_reports wr LEFT JOIN well_links wl ON wl.sdr_id = wr.id LEFT JOIN gwdb_wells gw ON gw.id = wl.gwdb_id"
+        else:
+            joins = " FROM well_reports wr"
+        sql = base_select + joins + " WHERE wr.id = :rid LIMIT 1"
         row = session.execute(text(sql), {"rid": well_id}).mappings().first()
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Well not found")
