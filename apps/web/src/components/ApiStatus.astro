@@ -6,7 +6,7 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
   <p id="api-status" style="margin:0"><small>API: checking…</small></p>
   <script is:inline>
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1500);
+    const timeout = setTimeout(() => controller.abort(), 2000);
     const container = document.currentScript.closest('section');
     const apiBase = (container?.dataset.api || '').toString().trim();
     const url = apiBase

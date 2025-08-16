@@ -19,11 +19,11 @@ jobs:
       - name: Install deps
         working-directory: apps/web
         run: npm ci
-      - name: Build
+      - name: Build (Dev)
         working-directory: apps/web
         env:
           PUBLIC_BASE_PATH: "/" # custom domain uses root
-          PUBLIC_API_URL: "https://api.dev.txwelllookup.com"
+          PUBLIC_API_URL: "https://api.txwelllookup.com"
         run: npm run build
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

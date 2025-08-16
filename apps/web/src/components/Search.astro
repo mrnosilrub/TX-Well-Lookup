@@ -22,32 +22,37 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
       results.innerHTML = `<small>${msg}</small>`;
     };
     async function fetchItems() {
-      try {
-        const apiBase = (container?.dataset.api || '').toString().trim();
-        const params = new URLSearchParams();
-        const qVal = (document.getElementById('q').value || '').trim();
-        const minVal = document.getElementById('depthMin').value;
-        const maxVal = document.getElementById('depthMax').value;
-        if (qVal) params.set('q', qVal);
-        if (minVal) params.set('depth_min', String(parseFloat(minVal)));
-        if (maxVal) params.set('depth_max', String(parseFloat(maxVal)));
-        params.set('include_gwdb', 'true');
-        const primary = apiBase
-          ? new URL(`v1/search?${params.toString()}`, apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
-          : new URL(`/v1/search?${params.toString()}`, window.location.origin).toString();
-        let res = await fetch(primary, { cache: 'no-store' });
-        if (!res.ok) {
-          // Fallback to static stub when API/proxy is unavailable
+      const apiBase = (container?.dataset.api || '').toString().trim();
+      const params = new URLSearchParams();
+      const qVal = (document.getElementById('q').value || '').trim();
+      const minVal = document.getElementById('depthMin').value;
+      const maxVal = document.getElementById('depthMax').value;
+      if (qVal) params.set('q', qVal);
+      if (minVal) params.set('depth_min', String(parseFloat(minVal)));
+      if (maxVal) params.set('depth_max', String(parseFloat(maxVal)));
+      params.set('include_gwdb', 'true');
+      const primary = apiBase
+        ? new URL(`v1/search?${params.toString()}`, apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
+        : new URL(`/v1/search?${params.toString()}`, window.location.origin).toString();
+      const fetchStub = async () => {
+        try {
           const stub = new URL('api/search.json', document.baseURI).toString();
-          res = await fetch(stub, { cache: 'no-store' });
+          const res2 = await fetch(stub, { cache: 'no-store' });
+          if (!res2.ok) return [];
+          const data2 = await res2.json();
+          return Array.isArray(data2.items) ? data2.items : Array.isArray(data2) ? data2 : [];
+        } catch {
+          return [];
         }
-        if (!res.ok) throw new Error('bad status');
+      };
+      try {
+        const res = await fetch(primary, { cache: 'no-store' });
+        if (!res.ok) return await fetchStub();
         const data = await res.json();
-        const items = Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
-        return items;
+        return Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
       } catch (err) {
-        console.error('search fetch failed', err);
-        return [];
+        console.warn('primary fetch failed, falling back to stub', err);
+        return await fetchStub();
       }
     }
     function applyFilters(items) {
