@@ -72,6 +72,8 @@ def write_sample_head(source_file_path: str, sample_file_path: str, num_lines: i
     lines_written = 0
     with open(source_file_path, "r", encoding="latin-1", errors="replace") as reader, \
             open(sample_file_path, "w", encoding="latin-1") as writer:
+        # Skip header line
+        _ = reader.readline()
         for line in reader:
             writer.write(line)
             lines_written += 1

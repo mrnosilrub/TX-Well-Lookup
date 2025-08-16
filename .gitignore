@@ -1,3 +1,6 @@
+# DS1 guardrail: never commit raw SDR data or samples
+data/raw_data/
+
 # Node
 node_modules
 # Astro
