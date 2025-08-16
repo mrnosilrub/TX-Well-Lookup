@@ -31,17 +31,12 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
       if (qVal) params.set('q', qVal);
       if (minVal) params.set('depth_min', String(parseFloat(minVal)));
       if (maxVal) params.set('depth_max', String(parseFloat(maxVal)));
-      params.set('include_gwdb', 'true');
+      // Disable GWDB enrichment for now; keep results small and safe
+      params.set('limit', '20');
       const primary = apiBase
         ? new URL(`v1/search?${params.toString()}`, apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
         : '';
-      const primaryNoGwdb = (() => {
-        const p2 = new URLSearchParams(params);
-        p2.delete('include_gwdb');
-        return apiBase
-          ? new URL(`v1/search?${p2.toString()}`, apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
-          : '';
-      })();
+      const primaryNoGwdb = primary; // identical while GWDB is disabled
       const fetchStub = async () => {
         try {
           const stub = new URL('api/search.json', document.baseURI).toString();
@@ -57,29 +52,11 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
         if (!primary) return await fetchStub();
         const res = await fetch(primary, { cache: 'no-store' });
         if (!res.ok) {
-          // Retry without GWDB enrichments if server errors
-          try {
-            if (!primaryNoGwdb) throw new Error('no-api');
-            const resNo = await fetch(primaryNoGwdb, { cache: 'no-store' });
-            if (resNo.ok) {
-              const dataNo = await resNo.json();
-              return Array.isArray(dataNo.items) ? dataNo.items : Array.isArray(dataNo) ? dataNo : [];
-            }
-          } catch {}
           return await fetchStub();
         }
         const data = await res.json();
         return Array.isArray(data.items) ? data.items : Array.isArray(data) ? data : [];
       } catch (err) {
-        // On network/JS errors, try no-GWDB path once before stub
-        try {
-          if (!primaryNoGwdb) throw new Error('no-api');
-          const resNo = await fetch(primaryNoGwdb, { cache: 'no-store' });
-          if (resNo.ok) {
-            const dataNo = await resNo.json();
-            return Array.isArray(dataNo.items) ? dataNo.items : Array.isArray(dataNo) ? dataNo : [];
-          }
-        } catch {}
         console.warn('primary fetch failed, falling back to stub', err);
         return await fetchStub();
       }
@@ -97,11 +74,12 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
     }
     function ensureMap(items) {
       if (window.__tx_map) {
-        window.__tx_map.setItems(items);
+        // Only send points with coordinates to the map
+        window.__tx_map.setItems(items.filter((it) => typeof it.lat === 'number' && typeof it.lon === 'number'));
         return;
       }
       const onReady = () => {
-        window.__tx_map?.setItems(items);
+        window.__tx_map?.setItems(items.filter((it) => typeof it.lat === 'number' && typeof it.lon === 'number'));
         window.removeEventListener('tx_map_ready', onReady);
       };
       window.addEventListener('tx_map_ready', onReady);
@@ -142,9 +120,8 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
       });
       ensureMap(items);
     }
-    // initial load and on submit
-    setStatus('Loading…');
-    fetchItems().then((items) => { currentItems = items; render(items); ensureMap(items); });
+    // Do not auto-fetch on initial load to avoid heavy queries on large DBs
+    setStatus('Add a search term and submit.');
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       setStatus('Searching…');

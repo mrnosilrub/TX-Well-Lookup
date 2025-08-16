@@ -37,6 +37,7 @@
           const fc = { type:'FeatureCollection', features: [] };
           featuresById.clear();
           items.forEach(it => {
+            if (typeof it.lon !== 'number' || typeof it.lat !== 'number') return;
             const f = { type:'Feature', geometry:{ type:'Point', coordinates:[it.lon, it.lat] }, properties:{ id: it.id, name: it.name, county: it.county } };
             fc.features.push(f);
             featuresById.set(it.id, f);

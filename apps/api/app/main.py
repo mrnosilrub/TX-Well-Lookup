@@ -50,6 +50,10 @@ app.add_middleware(
 logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper(), format="%(message)s")
 _logger = logging.getLogger("txwell.api")
 
+# Feature flags
+# Control GWDB enrichments globally (default disabled)
+GWDB_ENABLED = os.getenv("GWDB_ENABLED", "false").strip().lower() == "true"
+
 
 @app.middleware("http")
 async def _log_requests(request: Request, call_next):
@@ -135,6 +139,8 @@ def search_endpoint(q: str | None = None, county: str | None = None, limit: int 
                     depth_min: float | None = None, depth_max: float | None = None,
                     include_gwdb: bool = False) -> Dict[str, List[Dict[str, Any]]]:
     # If no DATABASE_URL, fall back to stub items
+    # Respect global GWDB flag regardless of client request
+    include_gwdb = bool(include_gwdb and GWDB_ENABLED)
     if not os.getenv("DATABASE_URL"):
         items = STUB_ITEMS
         if q:
@@ -171,6 +177,9 @@ def search_endpoint(q: str | None = None, county: str | None = None, limit: int 
 
             where = []
             params: Dict[str, Any] = {}
+            # Prefer only rows with coordinates when geometry exists to keep map/UI stable
+            if 'geom' in colset:
+                where.append("wr.geom IS NOT NULL")
             if q:
                 like_parts = []
                 if 'owner_name' in colset:
@@ -214,7 +223,7 @@ def search_endpoint(q: str | None = None, county: str | None = None, limit: int 
                     )).scalar()
                 except Exception:
                     ok = False
-                if ok:
+                if GWDB_ENABLED and ok:
                     select_cols += ", (wl.gwdb_id IS NOT NULL) as gwdb_available, gw.total_depth_ft as gwdb_depth_ft, gw.aquifer as aquifer"
                     join_clause = (
                         " LEFT JOIN well_links wl ON wl.sdr_id = wr.id"
@@ -570,7 +579,7 @@ def get_well_by_id(well_id: str) -> Dict[str, Any]:
             base_select += ", COALESCE(wr.location_error_m,0) as location_error_m"
         else:
             base_select += ", 0 as location_error_m"
-        if ok:
+        if GWDB_ENABLED and ok:
             base_select += ", (wl.gwdb_id IS NOT NULL) as gwdb_available, gw.total_depth_ft as gwdb_depth_ft"
             joins = " FROM well_reports wr LEFT JOIN well_links wl ON wl.sdr_id = wr.id LEFT JOIN gwdb_wells gw ON gw.id = wl.gwdb_id"
         else:
