@@ -106,8 +106,12 @@ def build_manifest(
     zip_path: str | None,
     sample_lines: int,
 ) -> dict:
-    pattern = os.path.join(source_dir, "*.txt")
-    file_paths = sorted(glob.glob(pattern))
+    # Find .txt files. Try direct directory first, then fall back to recursive search.
+    direct_pattern = os.path.join(source_dir, "*.txt")
+    file_paths = sorted(glob.glob(direct_pattern))
+    if not file_paths:
+        recursive_pattern = os.path.join(source_dir, "**", "*.txt")
+        file_paths = sorted(glob.glob(recursive_pattern, recursive=True))
     summaries: List[FileSummary] = []
     for file_path in file_paths:
         summaries.append(summarize_file(file_path, samples_dir, sample_lines))
