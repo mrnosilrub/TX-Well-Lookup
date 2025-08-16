@@ -24,8 +24,10 @@ jobs:
     environment: ${{ inputs.env }}
     steps:
       - uses: actions/checkout@v4
-      - name: Install psql client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Setup PostgreSQL client
+        uses: shogo82148/actions-setup-postgresql@v1
+        with:
+          postgresql-version: '15'
       - name: Sanitize connection string
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -57,8 +59,10 @@ jobs:
     needs: apply
     environment: ${{ inputs.env }}
     steps:
-      - name: Install psql client
-        run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Setup PostgreSQL client
+        uses: shogo82148/actions-setup-postgresql@v1
+        with:
+          postgresql-version: '15'
       - name: Sanitize connection string
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
