@@ -27,6 +27,7 @@ import json
 import os
 import time
 from datetime import datetime
+import re
 from collections import defaultdict
 from typing import Dict, Iterable, List, Tuple
 import glob
@@ -123,6 +124,30 @@ def coerce_date(val: str) -> str | None:
             return dt.strftime("%Y-%m-%d")
         except Exception:
             pass
+    return None
+
+
+def extract_sdr_id(row: Dict[str, str]) -> str | None:
+    """Best-effort extract of SDR tracking number from a row.
+    Looks for headers containing tracking/number variants and returns a numeric ID.
+    """
+    if not row:
+        return None
+    candidates = []
+    for k, v in row.items():
+        key = (k or "").lower().replace("_", "").replace(" ", "")
+        if any(tok in key for tok in ["wellreporttrackingnumber", "reporttrackingnumber", "trackingnumber", "trkno", "trackingnum"]):
+            candidates.append(v or "")
+    for val in candidates:
+        s = (val or "").strip()
+        if not s:
+            continue
+        # keep purely numeric ids; else extract first numeric run
+        if s.isdigit():
+            return s
+        m = re.search(r"(\d{3,})", s)
+        if m:
+            return m.group(1)
     return None
 
 
@@ -456,6 +481,8 @@ def etl(source_dir: str, aliases_path: str, database_url: str, batch_size: int =
             for r in parse_rows(path_plug):
                 sdr_id = (r.get(id_key or "", "").strip() if id_key else "")
                 if not sdr_id:
+                    sdr_id = extract_sdr_id(r) or ""
+                if not sdr_id:
                     continue
                 rows_buf.append((
                     sdr_id,
@@ -466,6 +493,7 @@ def etl(source_dir: str, aliases_path: str, database_url: str, batch_size: int =
                     (r.get(lic or "", "").strip() or None) if lic else None,
                 ))
                 if len(rows_buf) >= batch_size:
+                    ensure_parent_ids(conn, [(row[0],) for row in rows_buf])
                     totals["plug_reports"] += upsert(conn,
                         """
                         INSERT INTO plug_reports (sdr_id, date_submitted, original_drill_date, plugging_date, comments, original_license_number)
@@ -479,6 +507,7 @@ def etl(source_dir: str, aliases_path: str, database_url: str, batch_size: int =
                         """,
                         rows_buf, batch_size)
                     rows_buf.clear()
+            ensure_parent_ids(conn, [(row[0],) for row in rows_buf])
             totals["plug_reports"] += upsert(conn,
                 """
                 INSERT INTO plug_reports (sdr_id, date_submitted, original_drill_date, plugging_date, comments, original_license_number)
