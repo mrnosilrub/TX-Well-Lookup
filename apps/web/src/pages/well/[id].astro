@@ -41,25 +41,23 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
       </div>
     </header>
     <main class="wrap" style="padding-block:24px">
-      {well ? (
-        <section class="card" data-api={publicApi}>
-          <h2>{well.name}</h2>
-          <div class="chips">
+      <section class="card" data-api={publicApi} data-id={id}>
+        <h2 id="well-title">{well ? well.name : 'Loading…'}</h2>
+        <div id="well-chips" class="chips">
+          {well && <>
             <span class="chip">County: {well.county}</span>
             <span class="chip">Depth: {well.depth_ft} ft</span>
             {well.aquifer && <span class="chip">Aquifer: {well.aquifer}</span>}
             {well.gcd && <span class="chip">GCD: {well.gcd}</span>}
             {well.gwdb_depth_ft && <span class="chip">GWDB: {well.gwdb_depth_ft} ft</span>}
-          </div>
-          <div style="display:flex;gap:12px;align-items:center;margin-top:12px">
-            <button id="btn-report" class="btn">Generate Report</button>
-            <span id="report-status"><small>Idle</small></span>
-          </div>
-        </section>
-        <NearbyEnergy lat={well.lat} lon={well.lon} />
-      ) : (
-        <section class="card"><p>Well not found.</p></section>
-      )}
+          </>}
+        </div>
+        <div style="display:flex;gap:12px;align-items:center;margin-top:12px">
+          <button id="btn-report" class="btn">Generate Report</button>
+          <span id="report-status"><small>Idle</small></span>
+        </div>
+      </section>
+      {well && <NearbyEnergy lat={well.lat} lon={well.lon} />}
 
       <div class="modal" id="paywall">
         <div>
@@ -78,6 +76,32 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
       const close = document.getElementById('close-paywall');
       const container = document.currentScript.closest('section');
       const apiBase = (container?.dataset.api || '').toString().trim();
+      const wellId = (container?.dataset.id || '').toString();
+      const titleEl = document.getElementById('well-title');
+      const chipsEl = document.getElementById('well-chips');
+      async function fetchWell(){
+        if (!apiBase || !wellId) return null;
+        const url = new URL(`v1/wells/${wellId}`, apiBase.endsWith('/') ? apiBase : apiBase + '/').toString();
+        try{
+          const res = await fetch(url, { cache: 'no-store' });
+          if (!res.ok) return null;
+          return await res.json();
+        }catch(e){ return null; }
+      }
+      (async function init(){
+        const data = await fetchWell();
+        if (data){
+          titleEl.textContent = data.name || `Well ${wellId}`;
+          chipsEl.innerHTML = '';
+          const frag = document.createDocumentFragment();
+          const add = (html) => { const div = document.createElement('div'); div.innerHTML = html; Array.from(div.childNodes).forEach(n=>frag.appendChild(n));};
+          if (data.county) add(`<span class=\"chip\">County: ${data.county}</span>`);
+          if (data.depth_ft != null) add(`<span class=\"chip\">Depth: ${data.depth_ft} ft</span>`);
+          if (data.aquifer) add(`<span class=\"chip\">Aquifer: ${data.aquifer}</span>`);
+          if (data.gwdb_depth_ft != null) add(`<span class=\"chip\">GWDB: ${data.gwdb_depth_ft} ft</span>`);
+          chipsEl.appendChild(frag);
+        }
+      })();
       function showModal(){ modal.style.display='flex'; }
       function hideModal(){ modal.style.display='none'; }
       close?.addEventListener('click', hideModal);

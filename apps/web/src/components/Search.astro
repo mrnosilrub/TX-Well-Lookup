@@ -24,9 +24,17 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
     async function fetchItems() {
       try {
         const apiBase = (container?.dataset.api || '').toString().trim();
+        const params = new URLSearchParams();
+        const qVal = (document.getElementById('q').value || '').trim();
+        const minVal = document.getElementById('depthMin').value;
+        const maxVal = document.getElementById('depthMax').value;
+        if (qVal) params.set('q', qVal);
+        if (minVal) params.set('depth_min', String(parseFloat(minVal)));
+        if (maxVal) params.set('depth_max', String(parseFloat(maxVal)));
+        params.set('include_gwdb', 'true');
         const primary = apiBase
-          ? new URL('v1/search', apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
-          : new URL('/v1/search', window.location.origin).toString();
+          ? new URL(`v1/search?${params.toString()}`, apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
+          : new URL(`/v1/search?${params.toString()}`, window.location.origin).toString();
         let res = await fetch(primary, { cache: 'no-store' });
         if (!res.ok) {
           // Fallback to static stub when API/proxy is unavailable
@@ -79,7 +87,8 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
         const li = document.createElement('li');
         li.style.padding = '10px 0';
         li.style.borderBottom = '1px solid #eee';
-        const gwdb = it.gwdb_depth_ft ? `<span class="chip" style="background:#ecfeff;border:1px solid #a5f3fc;color:#083344;border-radius:999px;padding:2px 8px;margin-left:6px;font-size:11px">GWDB</span>` : '';
+        const hasGwdb = Boolean(it.gwdb_available) || Boolean(it.gwdb_depth_ft);
+        const gwdb = hasGwdb ? `<span class="chip" style="background:#ecfeff;border:1px solid #a5f3fc;color:#083344;border-radius:999px;padding:2px 8px;margin-left:6px;font-size:11px">GWDB</span>` : '';
         li.innerHTML = `
           <strong><a href="well/${it.id}/">${it.name}</a></strong>
           ${gwdb}
