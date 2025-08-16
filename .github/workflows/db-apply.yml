@@ -59,6 +59,15 @@ jobs:
     steps:
       - name: Install psql client
         run: sudo apt-get update && sudo apt-get install -y postgresql-client
+      - name: Sanitize connection string
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          DB_URL="$DATABASE_URL"
+          DB_URL="${DB_URL#psql }"; DB_URL="${DB_URL#psql}"
+          DB_URL="${DB_URL%\'}"; DB_URL="${DB_URL#\'}"
+          DB_URL="${DB_URL%\"}"; DB_URL="${DB_URL#\"}"
+          echo "CONNECT_URL=$DB_URL" >> "$GITHUB_ENV"
       - name: Verify extensions
         run: |
           psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT extname FROM pg_extension WHERE extname IN ('postgis','pg_trgm');"
