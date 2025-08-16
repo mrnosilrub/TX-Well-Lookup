@@ -660,3 +660,23 @@ def debug_gwdb_check(limit: int = 1) -> Dict[str, Any]:
         except Exception as exc:
             return {"ok": False, "error": str(exc)}
 
+
+@app.get("/v1/debug/counts")
+def debug_counts() -> Dict[str, Any]:
+    with get_db_session() as session:
+        if session is None:
+            return {"ok": False, "error": "DB session unavailable"}
+        def one(sql: str) -> int:
+            try:
+                return int(session.execute(text(sql)).scalar() or 0)
+            except Exception:
+                return 0
+        totals = {
+            "well_reports_total": one("SELECT COUNT(*) FROM well_reports"),
+            "well_reports_with_geom": one("SELECT COUNT(*) FROM well_reports WHERE geom IS NOT NULL"),
+            "well_reports_with_depth": one("SELECT COUNT(*) FROM well_reports WHERE depth_ft IS NOT NULL"),
+            "gwdb_wells_total": one("SELECT COUNT(*) FROM gwdb_wells"),
+            "well_links_total": one("SELECT COUNT(*) FROM well_links"),
+        }
+        return {"ok": True, **totals}
+
