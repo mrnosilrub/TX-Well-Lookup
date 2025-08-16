@@ -10,20 +10,18 @@ const publicApi = import.meta.env.PUBLIC_API_URL || '';
       const timeout = setTimeout(() => controller.abort(), 2000);
       const container = document.currentScript.closest('section');
       const apiBase = (container?.dataset.api || '').toString().trim();
-      const url = apiBase
-        ? new URL('health', apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
-        : new URL('health', window.location.origin).toString();
+      const el = document.getElementById('api-status');
+      if (!el) { clearTimeout(timeout); return; }
+      const isValid = /^https?:\/\//i.test(apiBase);
+      if (!apiBase || !isValid) { el.innerHTML = '<small>API: not configured</small>'; clearTimeout(timeout); return; }
+      const url = new URL('health', apiBase.endsWith('/') ? apiBase : apiBase + '/').toString();
       fetch(url, { signal: controller.signal, cache: 'no-store' })
         .then((r) => r.ok ? r.json().catch(() => ({ ok: false })) : { ok: false })
         .then((data) => {
-          const el = document.getElementById('api-status');
-          if (!el) return;
           const ok = Boolean(data && data.ok);
           el.innerHTML = `<small>API: ${ok ? 'ok' : 'offline'}</small>`;
         })
         .catch(() => {
-          const el = document.getElementById('api-status');
-          if (!el) return;
           el.innerHTML = '<small>API: offline</small>';
         })
         .finally(() => clearTimeout(timeout));
