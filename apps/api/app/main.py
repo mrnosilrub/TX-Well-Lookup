@@ -84,6 +84,28 @@ async def _log_requests(request: Request, call_next):
         raise
 
 
+# Optional HSTS header (set at edge preferred; app-level fallback via env)
+_ENABLE_HSTS = os.getenv("ENABLE_HSTS", "false").lower() == "true"
+_HSTS_MAX_AGE = int(os.getenv("HSTS_MAX_AGE", "31536000"))
+_HSTS_INCLUDE_SUBDOMAINS = os.getenv("HSTS_INCLUDE_SUBDOMAINS", "false").lower() == "true"
+_HSTS_PRELOAD = os.getenv("HSTS_PRELOAD", "false").lower() == "true"
+
+
+@app.middleware("http")
+async def _hsts_middleware(request: Request, call_next):
+    response = await call_next(request)
+    if _ENABLE_HSTS:
+        proto = request.headers.get("x-forwarded-proto", request.url.scheme)
+        if str(proto).lower() == "https":
+            directives = [f"max-age={_HSTS_MAX_AGE}"]
+            if _HSTS_INCLUDE_SUBDOMAINS:
+                directives.append("includeSubDomains")
+            if _HSTS_PRELOAD:
+                directives.append("preload")
+            response.headers["Strict-Transport-Security"] = "; ".join(directives)
+    return response
+
+
 @app.get("/health")
 def health() -> Dict[str, bool]:
     return {"ok": True}
