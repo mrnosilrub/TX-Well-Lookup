@@ -30,6 +30,15 @@ def _ensure_dir(path: str) -> None:
     os.makedirs(path, exist_ok=True)
 
 
+def _resolve_target_dir(dest_dir: str) -> str:
+    """Return a directory that ends with 'SDRDownload' exactly once.
+
+    If dest_dir already ends with SDRDownload, use it as-is; otherwise, append it.
+    """
+    base = os.path.basename(os.path.normpath(dest_dir))
+    return dest_dir if base == "SDRDownload" else os.path.join(dest_dir, "SDRDownload")
+
+
 def download_sdr_zip(zip_url: str, dest_dir: str) -> None:
     _ensure_dir(dest_dir)
     with requests.get(zip_url, stream=True, timeout=60) as r:
@@ -45,9 +54,8 @@ def download_sdr_zip(zip_url: str, dest_dir: str) -> None:
                 # Extract only the files we require, but allow nested paths
                 base = os.path.basename(name)
                 if base in REQUIRED_FILES:
-                    # Some zips nest under SDRDownload/SDRDownload/
-                    nested_dir = os.path.join(dest_dir, "SDRDownload")
-                    target_path = os.path.join(nested_dir, base)
+                    target_base = _resolve_target_dir(dest_dir)
+                    target_path = os.path.join(target_base, base)
                     _ensure_dir(os.path.dirname(target_path))
                     with zf.open(member) as src, open(target_path, "wb") as dst:
                         dst.write(src.read())
@@ -55,13 +63,13 @@ def download_sdr_zip(zip_url: str, dest_dir: str) -> None:
 
 def download_sdr_files(base_url: str, dest_dir: str) -> None:
     _ensure_dir(dest_dir)
-    nested_dir = os.path.join(dest_dir, "SDRDownload")
-    _ensure_dir(nested_dir)
+    target_base = _resolve_target_dir(dest_dir)
+    _ensure_dir(target_base)
     for fname in REQUIRED_FILES:
         url = base_url.rstrip("/") + "/" + fname
         with requests.get(url, stream=True, timeout=60) as r:
             r.raise_for_status()
-            target_path = os.path.join(nested_dir, fname)
+            target_path = os.path.join(target_base, fname)
             with open(target_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=1024 * 512):
                     if chunk:
@@ -69,10 +77,10 @@ def download_sdr_files(base_url: str, dest_dir: str) -> None:
 
 
 def ensure_sdr_from_web(dest_dir: str, zip_url: Optional[str], base_url: Optional[str]) -> None:
-    # Accept either flat or nested SDRDownload/SDRDownload structure
+    # Accept either dest_dir/[files] or dest_dir/SDRDownload/[files]
+    target_base = _resolve_target_dir(dest_dir)
     flat_present = all(os.path.exists(os.path.join(dest_dir, f)) for f in REQUIRED_FILES)
-    nested_dir = os.path.join(dest_dir, "SDRDownload")
-    nested_present = all(os.path.exists(os.path.join(nested_dir, f)) for f in REQUIRED_FILES)
+    nested_present = all(os.path.exists(os.path.join(target_base, f)) for f in REQUIRED_FILES)
     if flat_present or nested_present:
         return
     if zip_url:
