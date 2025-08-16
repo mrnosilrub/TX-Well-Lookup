@@ -24,6 +24,8 @@ REQUIRED_FILES: List[str] = [
     "WellData.txt",
     "WellCompletion.txt",
 ]
+# Case-insensitive match map (zip members can vary casing)
+REQUIRED_CANON = {name.lower(): name for name in REQUIRED_FILES}
 
 
 def _ensure_dir(path: str) -> None:
@@ -53,9 +55,11 @@ def download_sdr_zip(zip_url: str, dest_dir: str) -> None:
                 name = member.filename
                 # Extract only the files we require, but allow nested paths
                 base = os.path.basename(name)
-                if base in REQUIRED_FILES:
+                key = base.lower()
+                if key in REQUIRED_CANON:
+                    canon = REQUIRED_CANON[key]
                     target_base = _resolve_target_dir(dest_dir)
-                    target_path = os.path.join(target_base, base)
+                    target_path = os.path.join(target_base, canon)
                     _ensure_dir(os.path.dirname(target_path))
                     with zf.open(member) as src, open(target_path, "wb") as dst:
                         dst.write(src.read())

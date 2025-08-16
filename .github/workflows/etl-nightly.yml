@@ -54,7 +54,16 @@ jobs:
             aws s3 sync "s3://${RAW_SDR_BUCKET}/${RAW_SDR_PREFIX}" "data/raw_data/SDRDownload/SDRDownload" --endpoint-url "${STORAGE_ENDPOINT}" --no-progress
             echo "RAW_SDR_DIR=$GITHUB_WORKSPACE/data/raw_data/SDRDownload/SDRDownload" >> "$GITHUB_ENV"
           elif [ -n "${SDR_ZIP_URL:-}" ] || [ -n "${SDR_BASE_URL:-}" ]; then
-            python -c "import os; from data.sources.sdr_web_fetch import ensure_sdr_from_web; dest='data/raw_data/SDRDownload/SDRDownload'; ensure_sdr_from_web(dest_dir=dest, zip_url=os.environ.get('SDR_ZIP_URL'), base_url=os.environ.get('SDR_BASE_URL')); print('Downloaded SDR to', dest)"
+            echo "Attempting SDR web fetch..."
+            python - <<'PY'
+            import os
+            from data.sources.sdr_web_fetch import ensure_sdr_from_web
+            dest = "data/raw_data/SDRDownload/SDRDownload"
+            ensure_sdr_from_web(dest_dir=dest, zip_url=os.getenv("SDR_ZIP_URL"), base_url=os.getenv("SDR_BASE_URL"))
+            print("Downloaded SDR to", dest)
+            PY
+            ls -la data/raw_data/SDRDownload/SDRDownload || true
+            ls -la data/raw_data/SDRDownload/SDRDownload/SDRDownload || true
             echo "RAW_SDR_DIR=$GITHUB_WORKSPACE/data/raw_data/SDRDownload/SDRDownload" >> "$GITHUB_ENV"
           else
             echo "No RAW_SDR_BUCKET or SDR_ZIP_URL/SDR_BASE_URL provided; skipping SDR fetch"

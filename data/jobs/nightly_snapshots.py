@@ -79,6 +79,8 @@ def main() -> int:
         f"GWDB upserted: {n_gwdb} ({t2 - t1:.2f}s); "
         f"Links: {n_links} ({t3 - t2:.2f}s)"
     )
+    if sdr_source == "sample_csv":
+        print("Note: Using sample CSV (no SDR raw detected). Set SDR_ZIP_URL or SDR_BASE_URL to ingest live TWDB data.")
     return 0
 
 
