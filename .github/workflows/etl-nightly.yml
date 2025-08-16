@@ -37,6 +37,8 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           PYTHONPATH: ${{ github.workspace }}
+          RAW_SDR_DIR: data/raw_data/SDRDownload/SDRDownload
+          RAW_SDR_SHAPE: data/raw_data/SDRDB_well_locations
         run: |
           python -m data.jobs.nightly_snapshots
       - name: Summaries
