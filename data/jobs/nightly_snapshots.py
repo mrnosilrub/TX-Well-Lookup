@@ -34,10 +34,17 @@ def main() -> int:
         return 2
 
     t0 = time.time()
-    if raw_sdr_dir and os.path.isdir(raw_sdr_dir):
+    raw_sdr_ok = (
+        bool(raw_sdr_dir)
+        and os.path.isdir(raw_sdr_dir)
+        and os.path.isfile(os.path.join(raw_sdr_dir, "WellData.txt"))
+    )
+    if raw_sdr_ok:
         n_sdr = upsert_sdr_from_twdb_raw(raw_sdr_dir, db_url, limit=None)
         sdr_source = "twdb_raw"
     else:
+        if raw_sdr_dir:
+            print(f"TWDB raw not found at {raw_sdr_dir}; falling back to sample CSV")
         n_sdr = upsert_sdr_from_csv(str(sdr_csv), db_url)
         sdr_source = "sample_csv"
     t1 = time.time()
