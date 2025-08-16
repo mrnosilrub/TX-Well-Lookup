@@ -28,6 +28,9 @@ Nightly ingest of SDR and GWDB, followed by spatial linking, with idempotence an
 
 ### Verification
 ```bash
+# GitHub → Actions → ETL Nightly (P4) → Run workflow → env: dev (repeat for staging/prod)
+# The job runs data/jobs/nightly_snapshots.py and prints row counts.
+# To manually verify:
 psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM well_reports;"
 psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM gwdb_wells;"
 psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM well_links;"
