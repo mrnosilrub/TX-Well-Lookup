@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import csv
+import sys
 import json
 import os
 import time
@@ -33,6 +34,12 @@ import re
 import psycopg2
 from psycopg2.extras import execute_batch
 
+
+# Increase CSV field size limit to handle very large SDR fields (e.g., lithology)
+try:
+    csv.field_size_limit(1_000_000_000)  # 1 GB
+except OverflowError:
+    csv.field_size_limit(2_147_483_647)  # Fallback for platforms with smaller max
 
 def load_aliases(path: str) -> Dict[str, Dict[str, List[str]]]:
     with open(path, "r", encoding="utf-8") as f:
