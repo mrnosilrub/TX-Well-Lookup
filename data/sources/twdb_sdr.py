@@ -47,11 +47,26 @@ def upsert_sdr_from_csv(csv_path: str, db_url: str) -> int:
 
 
 def _read_pipe_delimited(file_path: str) -> Iterable[Dict[str, str]]:
-    """Yield dict rows from a pipe-delimited TWDB text file."""
+    """Yield dict rows from a pipe-delimited TWDB text file.
+
+    Handles rows with extra columns (None keys) gracefully and strips whitespace
+    from both keys and string values. Extra columns are ignored.
+    """
     with open(file_path, newline="", encoding="latin-1") as f:
         reader = csv.DictReader(f, delimiter="|")
         for row in reader:
-            yield {k.strip(): (v.strip() if isinstance(v, str) else v) for k, v in row.items()}
+            normalized: Dict[str, str] = {}
+            for k, v in row.items():
+                if k is None:
+                    # Extra columns without headers; skip
+                    continue
+                key = k.strip() if isinstance(k, str) else str(k)
+                if isinstance(v, list):
+                    # DictReader may pack overflow fields into a list under None key; skip
+                    continue
+                value = v.strip() if isinstance(v, str) else v
+                normalized[key] = value
+            yield normalized
 
 
 def _first_nonempty(row: Dict[str, str], keys: List[str]) -> Optional[str]:

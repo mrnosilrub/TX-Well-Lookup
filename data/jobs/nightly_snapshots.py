@@ -35,11 +35,18 @@ def main() -> int:
         return 2
 
     t0 = time.time()
-    raw_sdr_ok = (
-        bool(raw_sdr_dir)
-        and os.path.isdir(raw_sdr_dir)
-        and os.path.isfile(os.path.join(raw_sdr_dir, "WellData.txt"))
-    )
+    # Accept either raw_sdr_dir/WellData.txt or raw_sdr_dir/SDRDownload/WellData.txt
+    raw_sdr_ok = False
+    sdr_candidates = [
+        os.path.join(raw_sdr_dir, "WellData.txt"),
+        os.path.join(raw_sdr_dir, "SDRDownload", "WellData.txt"),
+    ]
+    for candidate in sdr_candidates:
+        if os.path.isfile(candidate):
+            raw_sdr_ok = True
+            # Normalize to the parent folder of the detected file
+            raw_sdr_dir = os.path.dirname(candidate)
+            break
     if not raw_sdr_ok:
         zip_url = os.getenv("SDR_ZIP_URL")
         base_url = os.getenv("SDR_BASE_URL")
@@ -47,10 +54,11 @@ def main() -> int:
             try:
                 print("SDR raw missing; attempting web fetch...")
                 ensure_sdr_from_web(dest_dir=raw_sdr_dir, zip_url=zip_url, base_url=base_url)
-                raw_sdr_ok = (
-                    os.path.isdir(raw_sdr_dir)
-                    and os.path.isfile(os.path.join(raw_sdr_dir, "WellData.txt"))
-                )
+                for candidate in sdr_candidates:
+                    if os.path.isfile(candidate):
+                        raw_sdr_ok = True
+                        raw_sdr_dir = os.path.dirname(candidate)
+                        break
             except Exception as e:
                 print(f"SDR web fetch failed: {e}")
     if raw_sdr_ok:

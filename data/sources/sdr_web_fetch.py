@@ -45,7 +45,9 @@ def download_sdr_zip(zip_url: str, dest_dir: str) -> None:
                 # Extract only the files we require, but allow nested paths
                 base = os.path.basename(name)
                 if base in REQUIRED_FILES:
-                    target_path = os.path.join(dest_dir, base)
+                    # Some zips nest under SDRDownload/SDRDownload/
+                    nested_dir = os.path.join(dest_dir, "SDRDownload")
+                    target_path = os.path.join(nested_dir, base)
                     _ensure_dir(os.path.dirname(target_path))
                     with zf.open(member) as src, open(target_path, "wb") as dst:
                         dst.write(src.read())
@@ -53,11 +55,13 @@ def download_sdr_zip(zip_url: str, dest_dir: str) -> None:
 
 def download_sdr_files(base_url: str, dest_dir: str) -> None:
     _ensure_dir(dest_dir)
+    nested_dir = os.path.join(dest_dir, "SDRDownload")
+    _ensure_dir(nested_dir)
     for fname in REQUIRED_FILES:
         url = base_url.rstrip("/") + "/" + fname
         with requests.get(url, stream=True, timeout=60) as r:
             r.raise_for_status()
-            target_path = os.path.join(dest_dir, fname)
+            target_path = os.path.join(nested_dir, fname)
             with open(target_path, "wb") as f:
                 for chunk in r.iter_content(chunk_size=1024 * 512):
                     if chunk:
@@ -65,8 +69,11 @@ def download_sdr_files(base_url: str, dest_dir: str) -> None:
 
 
 def ensure_sdr_from_web(dest_dir: str, zip_url: Optional[str], base_url: Optional[str]) -> None:
-    # If files already present, do nothing
-    if all(os.path.exists(os.path.join(dest_dir, f)) for f in REQUIRED_FILES):
+    # Accept either flat or nested SDRDownload/SDRDownload structure
+    flat_present = all(os.path.exists(os.path.join(dest_dir, f)) for f in REQUIRED_FILES)
+    nested_dir = os.path.join(dest_dir, "SDRDownload")
+    nested_present = all(os.path.exists(os.path.join(nested_dir, f)) for f in REQUIRED_FILES)
+    if flat_present or nested_present:
         return
     if zip_url:
         download_sdr_zip(zip_url=zip_url, dest_dir=dest_dir)
