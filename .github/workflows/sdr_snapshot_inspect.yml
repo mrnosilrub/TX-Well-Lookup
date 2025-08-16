@@ -1,0 +1,115 @@
+name: SDR Snapshot & Inspect
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Environment (dev|staging|prod)
+        required: true
+        default: dev
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      sample_lines:
+        description: Number of sample lines to capture from each file
+        required: false
+        default: '200'
+
+concurrency:
+  group: sdr-inspect-${{ inputs.env }}
+  cancel-in-progress: false
+
+jobs:
+  snapshot:
+    name: Snapshot & Inspect
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.env }}
+    permissions:
+      contents: read
+    env:
+      RAW_SDR_BUCKET: ${{ vars.RAW_SDR_BUCKET }}
+      RAW_SDR_PREFIX: ${{ vars.RAW_SDR_PREFIX }}
+      STORAGE_ACCESS_KEY_ID: ${{ secrets.STORAGE_ACCESS_KEY_ID }}
+      STORAGE_SECRET_ACCESS_KEY: ${{ secrets.STORAGE_SECRET_ACCESS_KEY }}
+      STORAGE_ENDPOINT: ${{ secrets.STORAGE_ENDPOINT }}
+      SDR_ZIP_URL: ${{ secrets.SDR_ZIP_URL }}
+      SAMPLE_LINES: ${{ inputs.sample_lines }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install awscli
+
+      - name: Prepare directories
+        run: |
+          mkdir -p data/raw_data/SDRDownload/SDRDownload
+          mkdir -p data/raw_data/samples/heads
+
+      - name: Download SDR ZIP
+        run: |
+          set -euo pipefail
+          curl -fL --retry 5 --retry-delay 5 "$SDR_ZIP_URL" -o data/raw_data/sdr.zip
+
+      - name: Unzip SDR ZIP
+        run: |
+          unzip -n data/raw_data/sdr.zip -d data/raw_data/
+
+      - name: Inspect and create manifest
+        run: |
+          python data/scripts/sdr_snapshot_inspect.py \
+            --source-dir data/raw_data/SDRDownload/SDRDownload \
+            --samples-dir data/raw_data/samples/heads \
+            --manifest data/raw_data/manifest.json \
+            --sample-lines "$SAMPLE_LINES" \
+            --zip-path data/raw_data/sdr.zip
+
+      - name: Upload to R2
+        run: |
+          set -euo pipefail
+          export AWS_ACCESS_KEY_ID="$STORAGE_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$STORAGE_SECRET_ACCESS_KEY"
+          export AWS_DEFAULT_REGION="auto"
+          TIMESTAMP=$(date -u +%Y%m%dT%H%M%SZ)
+          export SNAPSHOT_PREFIX="$RAW_SDR_PREFIX/snapshots/$TIMESTAMP"
+          aws s3 cp data/raw_data/sdr.zip s3://$RAW_SDR_BUCKET/$SNAPSHOT_PREFIX/ --endpoint-url "$STORAGE_ENDPOINT"
+          aws s3 cp data/raw_data/manifest.json s3://$RAW_SDR_BUCKET/$SNAPSHOT_PREFIX/ --endpoint-url "$STORAGE_ENDPOINT"
+          aws s3 cp data/raw_data/samples/heads s3://$RAW_SDR_BUCKET/$SNAPSHOT_PREFIX/samples/heads/ --recursive --endpoint-url "$STORAGE_ENDPOINT"
+          echo "SNAPSHOT_PREFIX=$SNAPSHOT_PREFIX" >> $GITHUB_ENV
+
+      - name: Upload CI artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sdr-inspect-${{ inputs.env }}
+          path: |
+            data/raw_data/manifest.json
+            data/raw_data/samples/heads/**
+
+      - name: Job summary
+        run: |
+          python - << 'PY'
+          import json, os
+          manifest=json.load(open('data/raw_data/manifest.json'))
+          lines=[]
+          lines.append(f"### SDR Snapshot: {manifest.get('fetched_at','')}")
+          lines.append("")
+          lines.append("| File | Size (bytes) | Lines | Columns |")
+          lines.append("|---|---:|---:|---|")
+          for f in manifest.get('files', []):
+            cols=",".join(f.get('header_fields', []))
+            cols=cols.replace('|','\\|')
+            lines.append(f"| {f.get('name','')} | {f.get('size_bytes',0)} | {f.get('line_count',0)} | {cols} |")
+          with open(os.environ['GITHUB_STEP_SUMMARY'],'a',encoding='utf-8') as fh:
+            fh.write("\n".join(lines)+"\n")
+          PY
+
+
