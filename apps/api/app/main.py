@@ -34,11 +34,14 @@ app = FastAPI(title="TX Well Lookup API", version="0.1.0")
 # Env-driven CORS
 _origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
 _allowed_origins = [o.strip() for o in _origins_env.split(",") if o.strip()] or ["*"]
+_origin_regex_env = os.getenv("ALLOWED_ORIGIN_REGEX", "").strip() or None
+_allow_credentials_env = os.getenv("ALLOW_CREDENTIALS", "false").strip().lower() == "true"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed_origins,
-    allow_credentials=True,
+    allow_origin_regex=_origin_regex_env,
+    allow_credentials=_allow_credentials_env,
     allow_methods=["*"],
     allow_headers=["*"],
 )
