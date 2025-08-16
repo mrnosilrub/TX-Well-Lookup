@@ -6,6 +6,16 @@ on:
       - main
       - master
   workflow_dispatch:
+    inputs:
+      env:
+        description: Which environment's secrets to use (dev|staging|prod)
+        required: false
+        default: prod
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
 
 permissions:
   contents: read
@@ -19,6 +29,7 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    environment: ${{ (inputs.env != '' && inputs.env) || 'prod' }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -40,8 +51,8 @@ jobs:
       - name: Build (Astro)
         working-directory: apps/web
         env:
-          PUBLIC_BASE_PATH: ${{ vars.PUBLIC_BASE_PATH }}
-          PUBLIC_API_URL: ${{ vars.PUBLIC_API_URL }}
+          PUBLIC_BASE_PATH: ${{ (vars.PUBLIC_BASE_PATH != '' && vars.PUBLIC_BASE_PATH) || '/' }}
+          PUBLIC_API_URL: ${{ (secrets.PUBLIC_API_URL != '' && secrets.PUBLIC_API_URL) || (vars.PUBLIC_API_URL != '' && vars.PUBLIC_API_URL) }}
         run: npm run build --silent
 
       - name: Upload artifact
