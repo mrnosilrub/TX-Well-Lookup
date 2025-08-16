@@ -1,89 +1,114 @@
-name: DB Apply & Verify (P1)
+name: Apply DB Init (DS2)
 
 on:
   workflow_dispatch:
     inputs:
       env:
-        description: Environment to target
-        required: true
-        default: dev
+        description: Which environment's secrets to use (dev|staging|prod)
+        required: false
+        default: prod
         type: choice
-        options: [dev, staging, prod]
+        options:
+          - dev
+          - staging
+          - prod
 
 permissions:
   contents: read
 
 concurrency:
   group: db-apply-${{ inputs.env }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   apply:
-    name: Apply schema (${{ inputs.env }})
+    name: Apply SQL init files (${{ inputs.env }})
     runs-on: ubuntu-latest
-    environment: ${{ inputs.env }}
+    environment: ${{ (inputs.env != '' && inputs.env) || 'prod' }}
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      RAW_SDR_BUCKET: ${{ vars.RAW_SDR_BUCKET }}
+      RAW_SDR_PREFIX: ${{ vars.RAW_SDR_PREFIX }}
+      STORAGE_ACCESS_KEY_ID: ${{ secrets.STORAGE_ACCESS_KEY_ID }}
+      STORAGE_SECRET_ACCESS_KEY: ${{ secrets.STORAGE_SECRET_ACCESS_KEY }}
+      STORAGE_ENDPOINT: ${{ secrets.STORAGE_ENDPOINT }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Setup psql container
-        run: |
-          docker pull postgres:15
-      - name: Sanitize connection string
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          DB_URL="$DATABASE_URL"
-          # Strip accidental leading 'psql ' if user pasted full CLI command
-          DB_URL="${DB_URL#psql }"
-          DB_URL="${DB_URL#psql}"
-          # Remove surrounding single/double quotes
-          DB_URL="${DB_URL%\'}"; DB_URL="${DB_URL#\'}"
-          DB_URL="${DB_URL%\"}"; DB_URL="${DB_URL#\"}"
-          echo "CONNECT_URL=$DB_URL" >> "$GITHUB_ENV"
-      - name: Enable extensions
-        run: |
-          docker run --rm postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          docker run --rm postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
-      - name: Apply base schema
-        run: |
-          docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/01_postgis.sql
-          # Prefer full GWDB schema; fall back to links-only if present
-          (docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb.sql) || (docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb_links.sql)
-          docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/03_well_reports_fix.sql
-          # Optional: RRC schema used by /v1/energy/nearby
-          (docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/03_rrc.sql) || true
-          # Optional indexes if present
-          (docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/04_indexes.sql) || true
-          # Optional alerts tables if present
-          (docker run --rm -v "$GITHUB_WORKSPACE:/work" -w /work postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/04_alerts.sql) || true
+      - name: Checkout
+        uses: actions/checkout@v4
 
-  verify:
-    name: Verify schema (${{ inputs.env }})
-    runs-on: ubuntu-latest
-    needs: apply
-    environment: ${{ inputs.env }}
-    steps:
-      - name: Setup psql container
+      - name: Install psql client
         run: |
-          docker pull postgres:15
-      - name: Sanitize connection string
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends postgresql-client
+
+      - name: Check DB connectivity
         run: |
-          DB_URL="$DATABASE_URL"
-          DB_URL="${DB_URL#psql }"; DB_URL="${DB_URL#psql}"
-          DB_URL="${DB_URL%\'}"; DB_URL="${DB_URL#\'}"
-          DB_URL="${DB_URL%\"}"; DB_URL="${DB_URL#\"}"
-          echo "CONNECT_URL=$DB_URL" >> "$GITHUB_ENV"
-      - name: Verify extensions
+          if [ -z "${DATABASE_URL:-}" ]; then echo "DATABASE_URL is not set" >&2; exit 2; fi
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "select version();"
+
+      - name: Install AWS CLI
         run: |
-          docker run --rm postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT extname FROM pg_extension WHERE extname IN ('postgis','pg_trgm');"
-      - name: Verify core tables exist
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends awscli
+
+      - name: Fetch latest raw SDR schema from R2 (if available)
         run: |
-          docker run --rm postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT 'well_reports' AS tbl, to_regclass('public.well_reports') IS NOT NULL AS exists
-          UNION ALL SELECT 'gwdb_wells', to_regclass('public.gwdb_wells') IS NOT NULL
-          UNION ALL SELECT 'well_links', to_regclass('public.well_links') IS NOT NULL
-          UNION ALL SELECT 'rrc_permits', to_regclass('public.rrc_permits') IS NOT NULL
-          UNION ALL SELECT 'rrc_wellbores', to_regclass('public.rrc_wellbores') IS NOT NULL;"
-      - name: Show indexes summary
+          set -euo pipefail
+          mkdir -p data/tmp
+          if [ -z "${RAW_SDR_BUCKET:-}" ] || [ -z "${RAW_SDR_PREFIX:-}" ]; then
+            echo "RAW_SDR_BUCKET/RAW_SDR_PREFIX not set; skipping raw schema fetch"
+            exit 0
+          fi
+          export AWS_ACCESS_KEY_ID="$STORAGE_ACCESS_KEY_ID"
+          export AWS_SECRET_ACCESS_KEY="$STORAGE_SECRET_ACCESS_KEY"
+          export AWS_DEFAULT_REGION="auto"
+          SNAPSHOTS_PREFIX="$RAW_SDR_PREFIX/snapshots/"
+          echo "Listing snapshots under s3://$RAW_SDR_BUCKET/$SNAPSHOTS_PREFIX"
+          LATEST=$(aws s3 ls "s3://$RAW_SDR_BUCKET/$SNAPSHOTS_PREFIX" --endpoint-url "$STORAGE_ENDPOINT" | awk '{print $NF}' | sed 's#/##' | sort | tail -n 1 || true)
+          if [ -z "${LATEST:-}" ]; then
+            echo "No snapshots found; skipping raw schema fetch"
+            exit 0
+          fi
+          SRC="s3://$RAW_SDR_BUCKET/$SNAPSHOTS_PREFIX$LATEST/sdr_raw_schema.sql"
+          echo "Fetching $SRC"
+          aws s3 cp "$SRC" data/tmp/sdr_raw_schema.sql --endpoint-url "$STORAGE_ENDPOINT" || true
+          if [ -s data/tmp/sdr_raw_schema.sql ]; then
+            echo "Raw schema downloaded: data/tmp/sdr_raw_schema.sql"
+          else
+            echo "Raw schema not present in latest snapshot; continuing"
+          fi
+
+      - name: Apply 01_postgis.sql
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/01_postgis.sql
+
+      - name: Apply 03_well_reports_fix.sql
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/03_well_reports_fix.sql
+
+      - name: Apply raw SDR schema (if downloaded)
         run: |
-          docker run --rm postgres:15 psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT tablename, indexname FROM pg_indexes WHERE schemaname='public' AND tablename IN ('well_reports','gwdb_wells') ORDER BY tablename, indexname;"
+          if [ -s data/tmp/sdr_raw_schema.sql ]; then psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f data/tmp/sdr_raw_schema.sql; else echo "No raw schema file to apply"; fi
+
+      - name: Apply 03_sdr_children.sql (DS2)
+        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/03_sdr_children.sql
+
+      - name: Apply 04_indexes.sql (optional)
+        run: |
+          if [ -f db/init/04_indexes.sql ]; then psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/04_indexes.sql; fi
+
+      - name: Apply 04_alerts.sql (optional)
+        run: |
+          if [ -f db/init/04_alerts.sql ]; then psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/init/04_alerts.sql; fi
+
+      - name: Job summary
+        run: |
+          echo "### DB Init Applied" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Environment: ${{ (inputs.env != '' && inputs.env) || 'prod' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Files:" >> "$GITHUB_STEP_SUMMARY"
+          echo "- db/init/01_postgis.sql" >> "$GITHUB_STEP_SUMMARY"
+          echo "- db/init/03_well_reports_fix.sql" >> "$GITHUB_STEP_SUMMARY"
+          if [ -s data/tmp/sdr_raw_schema.sql ]; then echo "- (from snapshot) data/tmp/sdr_raw_schema.sql" >> "$GITHUB_STEP_SUMMARY"; fi
+          echo "- db/init/03_sdr_children.sql" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f db/init/04_indexes.sql ]; then echo "- db/init/04_indexes.sql" >> "$GITHUB_STEP_SUMMARY"; fi
+          if [ -f db/init/04_alerts.sql ]; then echo "- db/init/04_alerts.sql" >> "$GITHUB_STEP_SUMMARY"; fi

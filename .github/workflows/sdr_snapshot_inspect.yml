@@ -109,6 +109,13 @@ jobs:
           echo "Listing sample heads produced:" || true
           find data/raw_data/samples/heads -type f -name "*.head.txt" -maxdepth 1 -print || true
 
+      - name: Generate raw SDR schema from manifest
+        run: |
+          python data/scripts/generate_sdr_raw_schema.py \
+            --manifest data/raw_data/manifest.json \
+            --out data/raw_data/sdr_raw_schema.sql
+          echo "Generated raw schema at data/raw_data/sdr_raw_schema.sql"
+
       - name: Upload to R2
         run: |
           set -euo pipefail
@@ -120,6 +127,7 @@ jobs:
           aws s3 cp data/raw_data/sdr.zip s3://$RAW_SDR_BUCKET/$SNAPSHOT_PREFIX/ --endpoint-url "$STORAGE_ENDPOINT"
           aws s3 cp data/raw_data/manifest.json s3://$RAW_SDR_BUCKET/$SNAPSHOT_PREFIX/ --endpoint-url "$STORAGE_ENDPOINT"
           aws s3 cp data/raw_data/samples/heads s3://$RAW_SDR_BUCKET/$SNAPSHOT_PREFIX/samples/heads/ --recursive --exclude "*" --include "*.head.txt" --endpoint-url "$STORAGE_ENDPOINT"
+          aws s3 cp data/raw_data/sdr_raw_schema.sql s3://$RAW_SDR_BUCKET/$SNAPSHOT_PREFIX/ --endpoint-url "$STORAGE_ENDPOINT" || true
           echo "SNAPSHOT_PREFIX=$SNAPSHOT_PREFIX" >> $GITHUB_ENV
 
       - name: Upload CI artifacts
@@ -129,6 +137,7 @@ jobs:
           path: |
             data/raw_data/manifest.json
             data/raw_data/samples/heads/**
+            data/raw_data/sdr_raw_schema.sql
 
       - name: Job summary
         run: |
