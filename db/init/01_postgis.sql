@@ -22,8 +22,6 @@ CREATE TABLE IF NOT EXISTS plugging_reports (
 
 -- Indexes
 CREATE INDEX IF NOT EXISTS idx_well_reports_geom ON well_reports USING GIST (geom);
-CREATE INDEX IF NOT EXISTS idx_well_reports_owner_trgm ON well_reports USING GIN (owner_name gin_trgm_ops);
-CREATE INDEX IF NOT EXISTS idx_well_reports_address_trgm ON well_reports USING GIN (address gin_trgm_ops);
 CREATE INDEX IF NOT EXISTS idx_well_reports_county ON well_reports (county);
 
 
