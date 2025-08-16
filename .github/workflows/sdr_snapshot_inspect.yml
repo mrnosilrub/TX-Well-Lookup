@@ -52,7 +52,7 @@ jobs:
 
       - name: Prepare directories
         run: |
-          mkdir -p data/raw_data/SDRDownload/SDRDownload
+          mkdir -p data/raw_data/SDRDownload
           mkdir -p data/raw_data/samples/heads
 
       - name: Check SDR URL connectivity (HEAD)
@@ -89,10 +89,18 @@ jobs:
             unzip -n data/raw_data/sdr.zip -d data/raw_data/
           fi
 
+      - name: List extracted .txt files
+        run: |
+          set -euo pipefail
+          echo "Top-level .txt under data/raw_data/SDRDownload:"
+          ls -l data/raw_data/SDRDownload/*.txt 2>/dev/null || true
+          echo "Recursive .txt under data/raw_data/SDRDownload (first 100):"
+          find data/raw_data/SDRDownload -type f -name "*.txt" | head -100
+
       - name: Inspect and create manifest
         run: |
           python data/scripts/sdr_snapshot_inspect.py \
-            --source-dir data/raw_data/SDRDownload/SDRDownload \
+            --source-dir data/raw_data/SDRDownload \
             --samples-dir data/raw_data/samples/heads \
             --manifest data/raw_data/manifest.json \
             --sample-lines "$SAMPLE_LINES" \
