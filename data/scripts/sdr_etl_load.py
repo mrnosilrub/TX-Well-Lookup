@@ -314,8 +314,6 @@ def etl(source_dir: str, aliases_path: str, database_url: str, batch_size: int =
                 if pk_num is None:
                     seq_by_id[sdr_id] += 1
                     pk_num = seq_by_id[sdr_id]
-                if pk_val == "":
-                    pass
                 values: List[object] = [sdr_id, pk_num]
                 for target, candidates in field_map:
                     src = pick_first(hdr, *candidates) or ""
