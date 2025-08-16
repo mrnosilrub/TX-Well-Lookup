@@ -7,11 +7,14 @@ Verify completeness and correctness after ingest. Establish coverage metrics and
 - `well_reports`: total, with_geom, with_depth
 - Cardinalities per child table
 - Counties distribution (top 10)
+- Raw vs normalized coverage: top N `sdr_raw.*` counts and matching normalized counts
 
 ### Sanity checks
 - TX bounds for geom: `lat 25–37`, `lon -107 to -93`
 - Date completeness for `date_completed`
 - Spot joins: `well + casing/filter/seal/tests`
+- Foreign keys: all child `sdr_id` exist in `well_reports`
+- Type coercion: numeric/date NULLs as expected (no empty-string insert errors)
 
 ### Queries (examples)
 - `SELECT COUNT(*) AS total, COUNT(geom) AS with_geom, COUNT(depth_ft) AS with_depth FROM well_reports;`

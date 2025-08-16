@@ -63,5 +63,9 @@ Define exact field mappings from SDR `.txt` files to normalized tables with robu
 ### Deliverables
 - A mapping table per source file (to be pasted into code).
 - Confirmed alias lists extracted from manifest and dictionary.
+- Artifacts produced by DS1 workflow:
+  - `sdr_header_aliases.json` (manifest + dictionary headers per file)
+  - `DS3_mapping.md` (human-readable mapping summary)
+  - `sdr_raw_schema.sql` (raw 1:1 staging schema)
 
 
