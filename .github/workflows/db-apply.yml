@@ -24,10 +24,9 @@ jobs:
     environment: ${{ inputs.env }}
     steps:
       - uses: actions/checkout@v4
-      - name: Setup PostgreSQL client
-        uses: shogo82148/actions-setup-postgresql@v1
-        with:
-          postgresql-version: '15'
+      - name: Setup psql (docker)
+        run: |
+          echo "PSQL=docker run --rm -i -v \"$GITHUB_WORKSPACE:/work\" -w /work postgres:15 psql" >> "$GITHUB_ENV"
       - name: Sanitize connection string
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -42,16 +41,16 @@ jobs:
           echo "CONNECT_URL=$DB_URL" >> "$GITHUB_ENV"
       - name: Enable extensions
         run: |
-          psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
-          psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
+          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS postgis;"
+          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "CREATE EXTENSION IF NOT EXISTS pg_trgm;"
       - name: Apply base schema
         run: |
-          psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/01_postgis.sql
+          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/01_postgis.sql
           # Prefer full GWDB schema; fall back to links-only if present
-          (psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb.sql) || (psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb_links.sql)
-          psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/03_well_reports_fix.sql
+          ("$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb.sql) || ("$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/02_gwdb_links.sql)
+          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/03_well_reports_fix.sql
           # Optional indexes if present
-          (psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/04_indexes.sql) || true
+          ("$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -f db/init/04_indexes.sql) || true
 
   verify:
     name: Verify schema (${{ inputs.env }})
@@ -59,10 +58,9 @@ jobs:
     needs: apply
     environment: ${{ inputs.env }}
     steps:
-      - name: Setup PostgreSQL client
-        uses: shogo82148/actions-setup-postgresql@v1
-        with:
-          postgresql-version: '15'
+      - name: Setup psql (docker)
+        run: |
+          echo "PSQL=docker run --rm -i -v \"$GITHUB_WORKSPACE:/work\" -w /work postgres:15 psql" >> "$GITHUB_ENV"
       - name: Sanitize connection string
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -74,14 +72,14 @@ jobs:
           echo "CONNECT_URL=$DB_URL" >> "$GITHUB_ENV"
       - name: Verify extensions
         run: |
-          psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT extname FROM pg_extension WHERE extname IN ('postgis','pg_trgm');"
+          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT extname FROM pg_extension WHERE extname IN ('postgis','pg_trgm');"
       - name: Verify core tables exist
         run: |
-          psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT 'well_reports' AS tbl, to_regclass('public.well_reports') IS NOT NULL AS exists
+          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT 'well_reports' AS tbl, to_regclass('public.well_reports') IS NOT NULL AS exists
           UNION ALL SELECT 'gwdb_wells', to_regclass('public.gwdb_wells') IS NOT NULL
           UNION ALL SELECT 'well_links', to_regclass('public.well_links') IS NOT NULL;"
       - name: Show indexes summary
         run: |
-          psql "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT tablename, indexname FROM pg_indexes WHERE schemaname='public' AND tablename IN ('well_reports','gwdb_wells') ORDER BY tablename, indexname;"
+          "$PSQL" "$CONNECT_URL" -v ON_ERROR_STOP=1 -c "SELECT tablename, indexname FROM pg_indexes WHERE schemaname='public' AND tablename IN ('well_reports','gwdb_wells') ORDER BY tablename, indexname;"
 
 
