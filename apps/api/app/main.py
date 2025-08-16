@@ -4,12 +4,14 @@ from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import Header
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Request
 from starlette import status
 from uuid import uuid4
 import random
 import os
 import time
 from sqlalchemy import text
+import logging
 
 from .db import get_db_session
 from .models import WellReport
@@ -29,13 +31,57 @@ except Exception:  # pragma: no cover - dev fallback when data module not presen
 
 app = FastAPI(title="TX Well Lookup API", version="0.1.0")
 
+# Env-driven CORS
+_origins_env = os.getenv("ALLOWED_ORIGINS", "").strip()
+_allowed_origins = [o.strip() for o in _origins_env.split(",") if o.strip()] or ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # local dev: allow Astro on 4321
+    allow_origins=_allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Basic JSON structured logging for requests and errors
+logging.basicConfig(level=os.getenv("LOG_LEVEL", "INFO").upper(), format="%(message)s")
+_logger = logging.getLogger("txwell.api")
+
+
+@app.middleware("http")
+async def _log_requests(request: Request, call_next):
+    start_ts = time.time()
+    try:
+        response = await call_next(request)
+        duration_ms = int((time.time() - start_ts) * 1000)
+        _logger.info(
+            json.dumps(
+                {
+                    "event": "request",
+                    "method": request.method,
+                    "path": request.url.path,
+                    "status": response.status_code,
+                    "duration_ms": duration_ms,
+                    "client": request.client.host if request.client else None,
+                    "ua": request.headers.get("user-agent"),
+                }
+            )
+        )
+        return response
+    except Exception as exc:
+        duration_ms = int((time.time() - start_ts) * 1000)
+        _logger.error(
+            json.dumps(
+                {
+                    "event": "error",
+                    "method": request.method,
+                    "path": request.url.path,
+                    "error": str(exc),
+                    "duration_ms": duration_ms,
+                }
+            )
+        )
+        raise
 
 
 @app.get("/health")
@@ -102,13 +148,13 @@ def search_endpoint(q: str | None = None, county: str | None = None, limit: int 
         if lat is not None and lon is not None:
             where.append("ST_DWithin(geom, ST_SetSRID(ST_MakePoint(:lon,:lat),4326)::geography, :radius)")
             params.update({"lat": lat, "lon": lon, "radius": radius_m})
-        select_cols = "report_id as id, owner_name as name, county, ST_Y(geom) as lat, ST_X(geom) as lon, depth_ft"
+        select_cols = "well_reports.id as id, owner_name as name, county, ST_Y(geom) as lat, ST_X(geom) as lon, depth_ft"
         join_clause = ""
         order_bias = ""
         if include_gwdb:
             # Bias linked wells to top when requested
             select_cols += ", (wl.gwdb_id IS NOT NULL) as gwdb_available"
-            join_clause = " LEFT JOIN well_links wl ON wl.report_id = well_reports.report_id"
+            join_clause = " LEFT JOIN well_links wl ON wl.sdr_id = well_reports.report_id"
             order_bias = " (wl.gwdb_id IS NOT NULL) DESC,"
         sql = f"SELECT {select_cols} FROM well_reports{join_clause}"
         if where:
@@ -404,8 +450,12 @@ def get_well_by_id(well_id: str) -> Dict[str, Any]:
     with get_db_session() as session:
         if session is None:
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="DB session unavailable")
+        try:
+            rid = int(well_id)
+        except Exception:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Well not found")
         sql = """
-        SELECT wr.report_id as id,
+        SELECT wr.id as id,
                wr.owner_name as name,
                wr.county,
                ST_Y(wr.geom) as lat,
@@ -413,14 +463,14 @@ def get_well_by_id(well_id: str) -> Dict[str, Any]:
                wr.depth_ft,
                COALESCE(wr.location_error_m,0) as location_error_m,
                (wl.gwdb_id IS NOT NULL) as gwdb_available,
-               gw.depth_ft as gwdb_depth_ft
+               gw.total_depth_ft as gwdb_depth_ft
         FROM well_reports wr
-        LEFT JOIN well_links wl ON wl.report_id = wr.report_id
+        LEFT JOIN well_links wl ON wl.sdr_id = wr.report_id
         LEFT JOIN gwdb_wells gw ON gw.id = wl.gwdb_id
-        WHERE wr.report_id = :rid
+        WHERE wr.id = :rid
         LIMIT 1
         """
-        row = session.execute(text(sql), {"rid": well_id}).mappings().first()
+        row = session.execute(text(sql), {"rid": rid}).mappings().first()
         if not row:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Well not found")
         err = float(row.get("location_error_m", 0) or 0)
