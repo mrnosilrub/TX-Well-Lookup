@@ -12,7 +12,7 @@ apps/web/dist
 .DS_Store
 
 # Python
-apps/api/.venv
+**/.venv
 **/__pycache__/
 *.pyc
 
