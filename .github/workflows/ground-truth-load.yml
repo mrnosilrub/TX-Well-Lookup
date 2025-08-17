@@ -1,6 +1,10 @@
-name: Ground Truth Load (manual)
+name: Ground Truth Load
 
 on:
+  push:
+    paths:
+      - 'ground_truth/**'
+      - '.github/workflows/ground-truth-load.yml'
   workflow_dispatch:
     inputs:
       env:
@@ -21,13 +25,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: ground-truth-${{ inputs.env }}
+  group: ground-truth-${{ github.event_name == 'workflow_dispatch' && inputs.env || 'dev' }}
   cancel-in-progress: false
 
 jobs:
   load:
     runs-on: ubuntu-latest
-    environment: ${{ (inputs.env != '' && inputs.env) || 'prod' }}
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.env || 'dev' }}
     env:
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       SDR_ZIP_URL: ${{ secrets.SDR_ZIP_URL }}
@@ -80,7 +84,7 @@ jobs:
 
       - name: Load ground_truth schema
         env:
-          SCHEMA: ${{ inputs.schema }}
+          SCHEMA: ${{ github.event_name == 'workflow_dispatch' && inputs.schema || 'ground_truth' }}
         run: |
           python ground_truth/loader/load_ground_truth.py \
             --zip data/raw_data/sdr.zip \
@@ -91,7 +95,7 @@ jobs:
         run: |
           echo "### Ground Truth Loaded" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
-          echo "Environment: ${{ (inputs.env != '' && inputs.env) || 'prod' }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "Schema: ${{ inputs.schema }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Environment: ${{ github.event_name == 'workflow_dispatch' && inputs.env || 'dev' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Schema: ${{ github.event_name == 'workflow_dispatch' && inputs.schema || 'ground_truth' }}" >> "$GITHUB_STEP_SUMMARY"
 
 
