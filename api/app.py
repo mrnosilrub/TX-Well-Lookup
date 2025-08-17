@@ -2,11 +2,14 @@ from __future__ import annotations
 
 import os
 from typing import Optional, List
+import time
+import uuid
+import json
 import math
 
 import psycopg2
 import psycopg2.pool
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, UploadFile, File, HTTPException, Request
 from fastapi.responses import StreamingResponse
 import io
 import csv
@@ -18,10 +21,17 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.styles import getSampleStyleSheet
 from urllib.parse import urlencode
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+import zipfile
 
 
 DATABASE_URL = os.getenv("DATABASE_URL")
+ALLOWED_ORIGINS = [s.strip() for s in os.getenv(
+    "ALLOWED_ORIGINS",
+    "http://127.0.0.1:4321,http://localhost:4321"
+).split(",") if s.strip()]
 
 
 class SearchItem(BaseModel):
@@ -48,14 +58,67 @@ class ReportFilters(BaseModel):
 app = FastAPI(title="TX Well Lookup API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://127.0.0.1:4321",
-        "http://localhost:4321",
-    ],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=False,
     allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"]
 )
+app.add_middleware(GZipMiddleware, minimum_size=1024)
+
+
+@app.middleware("http")
+async def access_log_middleware(request: Request, call_next):
+    request_id = uuid.uuid4().hex
+    request.state.request_id = request_id
+    start = time.perf_counter()
+    status_code = 500
+    try:
+        response = await call_next(request)
+        status_code = getattr(response, 'status_code', 200)
+    except Exception as exc:  # logged by handler as well
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        log = {
+            "event": "http_request_error",
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status": 500,
+            "duration_ms": duration_ms,
+            "client": request.client.host if request.client else None,
+            "user_agent": request.headers.get("user-agent"),
+            "error": repr(exc),
+        }
+        print(json.dumps(log), flush=True)
+        raise
+    else:
+        duration_ms = int((time.perf_counter() - start) * 1000)
+        log = {
+            "event": "http_request",
+            "request_id": request_id,
+            "method": request.method,
+            "path": request.url.path,
+            "status": status_code,
+            "duration_ms": duration_ms,
+            "client": request.client.host if request.client else None,
+            "user_agent": request.headers.get("user-agent"),
+        }
+        print(json.dumps(log), flush=True)
+        response.headers["X-Request-ID"] = request_id
+        return response
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request: Request, exc: Exception):
+    request_id = getattr(request.state, 'request_id', uuid.uuid4().hex)
+    log = {
+        "event": "unhandled_exception",
+        "request_id": request_id,
+        "method": request.method,
+        "path": request.url.path,
+        "error": repr(exc),
+    }
+    print(json.dumps(log), flush=True)
+    return JSONResponse(status_code=500, content={"detail": "Internal Server Error", "request_id": request_id}, headers={"X-Request-ID": request_id})
 
 pool: Optional[psycopg2.pool.SimpleConnectionPool] = None
 
@@ -142,7 +205,10 @@ def get_well(well_id: str):
             )
     finally:
         if pool is not None and conn is not None:
-            pool.putconn(conn)
+            try:
+                pool.putconn(conn)
+            except Exception:
+                pass
 
 
 @app.get("/v1/search", response_model=List[SearchItem])
@@ -517,4 +583,159 @@ def meta():
         if pool is not None and conn is not None:
             pool.putconn(conn)
 
+
+
+@app.post("/v1/batch")
+def batch_zip(
+    file: UploadFile = File(...),
+    limit: int = Query(default=50, ge=1, le=50),
+):
+    """Accept a small CSV of addresses or lat/lon and return a ZIP of PDFs.
+    CSV columns (any one of):
+      - address (freeform)
+      - lat, lon
+    """
+    # Read CSV
+    try:
+        content = file.file.read()
+    finally:
+        try:
+            file.file.close()
+        except Exception:
+            pass
+    try:
+        text = content.decode('utf-8', errors='ignore')
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid CSV encoding")
+    import csv as _csv
+    import io as _io
+    rdr = _csv.DictReader(_io.StringIO(text))
+    tasks: list[dict] = []
+    for row in rdr:
+        task: dict = {}
+        if row.get('lat') and row.get('lon'):
+            try:
+                task['lat'] = float(row['lat'])
+                task['lon'] = float(row['lon'])
+            except Exception:
+                continue
+        elif row.get('address'):
+            # naive: geocode via Nominatim
+            try:
+                import requests as _req
+                resp = _req.get('https://nominatim.openstreetmap.org/search', params={
+                    'q': row['address'], 'format': 'json', 'limit': 1
+                }, headers={'User-Agent':'TX Well Lookup Batch'}, timeout=10)
+                j = resp.json()
+                if j:
+                    task['lat'] = float(j[0]['lat'])
+                    task['lon'] = float(j[0]['lon'])
+            except Exception:
+                continue
+        if 'lat' in task and 'lon' in task:
+            tasks.append(task)
+        if len(tasks) >= limit:
+            break
+    if not tasks:
+        raise HTTPException(status_code=400, detail="No valid rows found (need address or lat/lon)")
+
+    # Generate PDFs into memory
+    zip_buf = io.BytesIO()
+    with zipfile.ZipFile(zip_buf, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+        for idx, t in enumerate(tasks, start=1):
+            # Reuse export_pdf flow by calling the same PDF builder via HTTP params
+            # Simpler: call our internal function through a tiny inline builder duplicating key bits
+            # Build rows for a specific small query around this point
+            county = None; depth_min=None; depth_max=None; date_from=None; date_to=None; radius_m=5000; lim=200
+            # Query DB for matching rows
+            clauses: List[str] = []
+            params: List[object] = []
+            lat = t['lat']; lon = t['lon']
+            delta_lat = radius_m / 111_320.0
+            cos_lat = max(0.001, math.cos(math.radians(lat)))
+            delta_lon = radius_m / (111_320.0 * cos_lat)
+            min_lat, max_lat = lat - delta_lat, lat + delta_lat
+            min_lon, max_lon = lon - delta_lon, lon + delta_lon
+            clauses.append("lat BETWEEN %s AND %s"); params.extend([min_lat, max_lat])
+            clauses.append("lon BETWEEN %s AND %s"); params.extend([min_lon, max_lon])
+            where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+            sql = (
+                "SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD') "
+                "FROM app.wells " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
+            )
+            params.append(lim)
+
+            rows: List[tuple] = []
+            as_of: Optional[str] = None
+            conn = _get_conn()
+            if conn is not None:
+                try:
+                    with conn.cursor() as cur:
+                        cur.execute(sql, params)
+                        rows = cur.fetchall()
+                        cur.execute("SELECT to_char(MAX(date_completed), 'YYYY-MM-DD') FROM app.wells")
+                        r = cur.fetchone(); as_of = r[0] if r and r[0] else None
+                finally:
+                    try:
+                        pool and pool.putconn(conn)
+                    except Exception:
+                        pass
+
+            # Build a tiny one-page PDF for this task
+            buf = io.BytesIO()
+            doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.75*inch, rightMargin=0.75*inch,
+                                     topMargin=0.6*inch, bottomMargin=0.6*inch)
+            styles = getSampleStyleSheet()
+            elems: list = []
+            title = Paragraph(f"TX Well Lookup — Results @ {lat:.4f},{lon:.4f}", styles['Title'])
+            when = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
+            meta_parts = [f"Generated: {when}"]
+            if as_of: meta_parts.append(f"SDR as-of {as_of}")
+            elems += [title, Spacer(1, 8), Paragraph(" | ".join(meta_parts), styles['Normal']), Spacer(1, 12)]
+            # Map image (reuse staticmap code)
+            try:
+                from staticmap import StaticMap, IconMarker, CircleMarker
+                img_w, img_h = 1400, 700
+                m = StaticMap(img_w, img_h, padding_x=60, padding_y=60, url_template='https://tile.openstreetmap.org/{z}/{x}/{y}.png')
+                latlons = [(r[3], r[4]) for r in rows if r[3] is not None and r[4] is not None]
+                leaflet_icon_path = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'apps', 'web', 'node_modules', 'leaflet', 'dist', 'images', 'marker-icon.png'))
+                use_icon = os.path.exists(leaflet_icon_path)
+                for ll in latlons[:200]:
+                    if use_icon:
+                        try:
+                            m.add_marker(IconMarker((float(ll[1]), float(ll[0])), leaflet_icon_path, 12, 41))
+                        except Exception:
+                            m.add_marker(CircleMarker((float(ll[1]), float(ll[0])), '#2563eb', 6))
+                    else:
+                        m.add_marker(CircleMarker((float(ll[1]), float(ll[0])), '#2563eb', 6))
+                m.add_marker(CircleMarker((float(lon), float(lat)), '#ef4444', 8))
+                image = m.render(zoom=None)
+                out = io.BytesIO(); image.save(out, format='PNG'); out.seek(0)
+                elems += [Image(out, width=doc.width, height=doc.width * (img_h / img_w)), Spacer(1, 8), Paragraph("Map data © OpenStreetMap contributors", styles['Normal']), Spacer(1, 12)]
+            except Exception:
+                pass
+            data = [["Well ID", "Owner", "County", "Depth (ft)", "Completed"]]
+            for r in rows:
+                data.append([r[0], r[1] or "", r[2] or "", r[5] or "", r[6] or ""])
+            tbl = Table(data, colWidths=[1.2*inch, 3.0*inch, 1.4*inch, 1.1*inch, 1.2*inch], repeatRows=1)
+            tbl.setStyle(TableStyle([
+                ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1f2937')),
+                ('TEXTCOLOR', (0,0), (-1,0), colors.whitesmoke),
+                ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0,0), (-1,0), 10),
+                ('ALIGN', (0,0), (-1,0), 'LEFT'),
+                ('GRID', (0,0), (-1,-1), 0.25, colors.HexColor('#e5e7eb')),
+                ('FONTSIZE', (0,1), (-1,-1), 9),
+                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+                ('ROWBACKGROUNDS', (0,1), (-1,-1), [colors.white, colors.HexColor('#f9fafb')]),
+            ]))
+            elems.append(tbl)
+            doc.build(elems)
+            buf.seek(0)
+            zf.writestr(f"tx_wells_{idx:02d}.pdf", buf.read())
+
+    zip_buf.seek(0)
+    return StreamingResponse(zip_buf, media_type='application/zip', headers={
+        'Content-Disposition': f"attachment; filename=\"tx_wells_batch_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.zip\""
+    })
 

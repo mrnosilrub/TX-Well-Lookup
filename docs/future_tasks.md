@@ -133,3 +133,13 @@ Notes
 - **Storage**: Optionally upload PDFs to R2 and return a short‑lived signed URL; keep streaming for small reports.
 - **Typography/spacing**: Final pass on fonts, spacing, and section balance; confirm OSM attribution.
 
+### 13) Batch export v2 (post‑M6)
+
+- **Master CSV**: Include one CSV in the ZIP summarizing each input row → resolved lat/lon (if geocoded), number of wells included, and the corresponding PDF filename.
+- **Invalid rows report**: Emit a small CSV of invalid/failed rows (bad coordinates, no geocode hit, etc.).
+- **UI upload**: Add a simple upload form in the web app with drag‑and‑drop, template CSV, progress indicator, and clear error messages.
+- **Storage**: Upload ZIP to R2 and return a signed URL (TTL), in addition to streaming for small outputs.
+- **Concurrency/backpressure**: Cap parallel geocoding and DB queries; add short sleeps or a token bucket to respect Nominatim rate limits.
+- **Config**: Make geocoding on/off and provider configurable via env.
+- **Resilience**: Add retries with jitter for network calls; timeouts and graceful fallbacks.
+
