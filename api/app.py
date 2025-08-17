@@ -23,10 +23,13 @@ from urllib.parse import urlencode
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.gzip import GZipMiddleware
 from fastapi.responses import JSONResponse
+from dotenv import load_dotenv
 from pydantic import BaseModel
 import zipfile
 
 
+# Load env vars from api/.env for local/dev runs
+load_dotenv(os.path.join(os.path.dirname(__file__), '.env'))
 DATABASE_URL = os.getenv("DATABASE_URL")
 ALLOWED_ORIGINS = [s.strip() for s in os.getenv(
     "ALLOWED_ORIGINS",

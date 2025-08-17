@@ -1,5 +1,5 @@
 ---
-const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001';
+const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000';
 ---
 <html lang="en">
   <head>
@@ -189,7 +189,8 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
     <script type="module">
       const L = window.L;
       // Read API base URL from meta tag injected by Astro
-      const API = (document.querySelector('meta[name="x-api"]')?.getAttribute('content')) || 'http://127.0.0.1:8001';
+      const API = (document.querySelector('meta[name="x-api"]')?.getAttribute('content')) || 'http://127.0.0.1:8000';
+      console.log('API URL:', API);
       const map = L.map('map').setView([31.0, -99.0], 6);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM' }).addTo(map);
       let markers = [];
@@ -491,7 +492,9 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
           const res = await fetch(new URL('/v1/meta', API));
           const j = await res.json();
           if(j && j.as_of){ document.querySelector('footer').innerHTML = `SDR as-of ${j.as_of}. Contains data from TWDB SDR.`; const asof=document.getElementById('asof'); if(asof) asof.textContent=`As-of ${j.as_of}`; }
-        }catch{}
+        }catch(e){
+          console.error('Failed to fetch /v1/meta:', e);
+        }
       })();
       // Export CSV (POST)
       const exportBtn = document.getElementById('exportCsv');
