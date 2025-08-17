@@ -179,6 +179,8 @@ def on_startup() -> None:
     global pool
     if DATABASE_URL:
         pool = psycopg2.pool.SimpleConnectionPool(minconn=1, maxconn=5, dsn=DATABASE_URL)
+        # best-effort ensure views exist in dev/local if enabled
+        _ensure_app_views_if_configured()
 
 
 @app.on_event("shutdown")
@@ -230,6 +232,46 @@ def _get_conn():
             pass
         pool = psycopg2.pool.SimpleConnectionPool(minconn=1, maxconn=5, dsn=DATABASE_URL)
         return pool.getconn()
+
+
+def _ensure_app_views_if_configured() -> None:
+    """Optionally ensure the `app` views exist by applying the SQL file.
+
+    Controlled by env var AUTO_APPLY_VIEWS ("1"/"true"). No-op if no DATABASE_URL.
+    """
+    flag = os.getenv("AUTO_APPLY_VIEWS", "").lower() in ("1", "true", "yes")
+    if not flag:
+        return
+    if not DATABASE_URL:
+        return
+    sql_path = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "db", "app_views.sql"))
+    if not os.path.exists(sql_path):
+        return
+    conn = _get_conn()
+    if conn is None:
+        return
+    try:
+        with conn.cursor() as cur:
+            try:
+                with open(sql_path, "r", encoding="utf-8") as f:
+                    text = f.read()
+                parts = [p.strip() for p in text.split(";")]
+                for stmt in parts:
+                    if not stmt:
+                        continue
+                    cur.execute(stmt)
+                conn.commit()
+            except Exception:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise
+    finally:
+        try:
+            pool and pool.putconn(conn)
+        except Exception:
+            pass
 
 
 def _resolve_wells_table(source: Optional[str]) -> str:
@@ -668,13 +710,14 @@ def export_pdf(
 
 
 @app.get("/v1/meta")
-def meta():
+def meta(source: Optional[str] = Query(default="sdr", pattern="^(sdr|gwdb|all)$")):
     if pool is None and not DATABASE_URL:
         return {"as_of": None}
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
-            cur.execute("SELECT to_char(MAX(date_completed), 'YYYY-MM-DD') FROM app.wells")
+            table = _resolve_wells_table(source)
+            cur.execute(f"SELECT to_char(MAX(date_completed), 'YYYY-MM-DD') FROM {table}")
             row = cur.fetchone()
             return {"as_of": row[0] if row and row[0] else None}
     finally:

@@ -18,8 +18,8 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       *{box-sizing:border-box}
       /* Global rule to shift all tbody td content */
       :global(tbody td) { padding-left: calc(var(--cell-pad) + 2px) !important; }
-      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg);color:var(--text);display:grid;grid-template-rows:auto 1fr auto;min-height:100vh}
-      header, footer{padding:16px 20px;border-bottom:1px solid var(--line);background:var(--panel);color:var(--text)}
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg);color:var(--text);display:grid;grid-template-rows:auto 1fr;min-height:100vh}
+      header{padding:16px 20px;border-bottom:1px solid var(--line);background:var(--panel);color:var(--text)}
       header strong{letter-spacing:0.3px}
       .app{display:grid;grid-template-columns:360px minmax(0,1fr);gap:0}
       .sidebar{border-right:1px solid var(--line);padding:18px 16px 24px;background:var(--panel);position:relative;z-index:3;isolation:isolate}
@@ -37,8 +37,17 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       }
       label{display:block;font-size:12px;color:var(--muted);margin-top:10px}
       input, select{width:100%;padding:10px;margin-top:6px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text)}
+      /* Modern select styling */
+      select#source{
+        appearance:none; -webkit-appearance:none; -moz-appearance:none;
+        background-color:var(--panel);
+        padding:10px 36px 10px 12px;
+        background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5.25 7.5L10 12.25L14.75 7.5" stroke="%2394a3b8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>');
+        background-repeat:no-repeat; background-size:16px; background-position:right 12px center;
+      }
+      select#source:focus{outline:2px solid var(--accent); outline-offset:2px}
       [data-theme='light'] input, [data-theme='light'] select{color:#000 !important}
-      input:focus, select:focus, button:focus{outline:2px solid var(--accent);outline-offset:2px}
+      input:focus, button:focus{outline:2px solid var(--accent);outline-offset:2px}
       .btns{display:flex;gap:10px}
       button{margin-top:14px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer}
       button:hover{border-color:var(--accent);background:color-mix(in srgb, var(--panel) 90%, var(--accent))}
@@ -61,6 +70,10 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       thead tr:hover th{background:color-mix(in srgb, var(--panel) 90%, var(--accent) 10%)}
       .sortable[data-sort="asc"]::after{content:'\25B2'}
       .sortable[data-sort="desc"]::after{content:'\25BC'}
+      /* Source pill */
+      .chip{display:inline-block;padding:4px 8px;border-radius:999px;font-size:12px;font-weight:600;border:1px solid var(--line)}
+      .chip-sdr{background:#1d4ed8;color:#fff}
+      .chip-gwdb{background:#059669;color:#fff}
       tbody tr{cursor:pointer}
       tbody tr:hover{background:color-mix(in srgb, var(--accent) 15%, var(--panel))}
       tr.row-active{background:color-mix(in srgb, var(--panel) 85%, var(--accent) 15%)}
@@ -107,6 +120,13 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
     <div class="app">
       <div class="sidebar">
         <form id="filters">
+          <label>Data source
+            <select name="source" id="source">
+              <option value="sdr" selected>SDR</option>
+              <option value="gwdb">GWDB</option>
+              <option value="all">All</option>
+            </select>
+          </label>
           <label>County
             <input name="county" placeholder="e.g., Galveston" />
           </label>
@@ -161,11 +181,12 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
           <div id="status" aria-live="polite">Ready</div>
           <table>
             <colgroup>
-              <col style="width:10%"><col style="width:42%"><col style="width:16%"><col style="width:16%"><col style="width:16%">
+              <col style="width:10%"><col style="width:8%"><col style="width:34%"><col style="width:16%"><col style="width:16%"><col style="width:16%">
             </colgroup>
             <thead>
               <tr>
                 <th data-key="id" class="sortable">Well ID</th>
+                <th data-key="source" class="sortable">Source</th>
                 <th data-key="owner" class="sortable">Owner</th>
                 <th data-key="county" class="sortable">County</th>
                 <th data-key="depth_ft" class="sortable">Depth (ft)</th>
@@ -183,9 +204,6 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
         </div>
       </div>
     </div>
-    <footer>
-      Contains data from TWDB SDR. For reference use only.
-    </footer>
     <script type="module">
       const L = window.L;
       // Read API base URL from meta tag injected by Astro
@@ -204,6 +222,7 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       let page = 1;
       let sortKey = 'date_completed';
       let sortDir = 'desc';
+      const sourceSelect = document.getElementById('source');
       function updateSortIndicators(){
         document.querySelectorAll('th.sortable').forEach(th => {
           const key = th.getAttribute('data-key');
@@ -272,8 +291,15 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
         const tbody = document.getElementById('rows');
         tbody.innerHTML = '';
         for(const it of items){
+          const source = (it.source || 'sdr').toUpperCase();
+          const chipClass = `chip chip-${(it.source || 'sdr')}`;
           const tr = document.createElement('tr');
-          tr.innerHTML = `<td><span class="cell">${it.id}</span></td><td><span class="cell">${it.owner||''}</span></td><td><span class="cell">${it.county||''}</span></td><td><span class="cell">${it.depth_ft??''}</span></td><td class="date-cell"><span class="cell">${it.date_completed||''}</span></td>`;
+          tr.innerHTML = `<td><span class="cell">${it.id}</span></td>`+
+                          `<td><span class="${chipClass}">${source}</span></td>`+
+                          `<td><span class="cell">${it.owner||''}</span></td>`+
+                          `<td><span class="cell">${it.county||''}</span></td>`+
+                          `<td><span class="cell">${it.depth_ft??''}</span></td>`+
+                          `<td class="date-cell"><span class="cell">${it.date_completed||''}</span></td>`;
           tr.tabIndex = 0;
           tr.style.cursor = 'pointer';
           tr.addEventListener('click', () => {
@@ -294,7 +320,7 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
         }
         if(items.length === 0){
           const tr = document.createElement('tr');
-          tr.innerHTML = '<td colspan="5" style="color:var(--muted);padding:16px">No results. Try widening your filters or moving the map.</td>';
+          tr.innerHTML = '<td colspan="6" style="color:var(--muted);padding:16px">No results. Try widening your filters or moving the map.</td>';
           tbody.appendChild(tr);
         }
       }
@@ -367,6 +393,7 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
         const form = document.getElementById('filters');
         const data = Object.fromEntries(new FormData(form).entries());
         const params = {
+          source: (data.source || 'sdr'),
           county: data.county || undefined,
           depth_min: data.depth_min || undefined,
           depth_max: data.depth_max || undefined,
@@ -424,9 +451,13 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
         Object.entries(params).forEach(([k,v]) => { if(v!=null && v!=='') qs.set(k, String(v)); });
         const url = `${location.pathname}?${qs.toString()}`;
         history.replaceState(null, '', url);
+        // Update header as-of for selected source
+        await updateMeta();
       }
       function applyQueryDefaults(){
         const params = new URLSearchParams(window.location.search);
+        const source = params.get('source');
+        if(source && sourceSelect){ sourceSelect.value = source; }
         const county = params.get('county');
         if(county){ document.querySelector('input[name="county"]').value = county; }
         const df = params.get('date_from'); if(df) document.querySelector('input[name="date_from"]').value = df;
@@ -443,7 +474,7 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       // Auto-run on filter changes with debounce
       let t;
       const deb = (fn, ms=300) => (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
-      ['county','depth_min','depth_max','date_from','date_to','radius_m'].forEach(n => {
+      ;['source','county','depth_min','depth_max','date_from','date_to','radius_m'].forEach(n => {
         const el = document.querySelector(`[name="${n}"]`);
         if(el){ el.addEventListener('input', deb(() => runSearch().catch(() => setStatus('Error loading')))); }
       });
@@ -476,6 +507,19 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       addrInput && addrInput.addEventListener('keydown', async (e) => {
         if(e.key === 'Enter') { e.preventDefault(); const q = addrInput.value.trim(); await geocodeAndCenter(q); }
       });
+
+      async function updateMeta(){
+        try{
+          const sel = (sourceSelect && sourceSelect.value) || 'sdr';
+          const url = new URL('/v1/meta', API);
+          url.searchParams.set('source', sel);
+          const res = await fetch(url);
+          const j = await res.json();
+          const asof=document.getElementById('asof');
+          if(asof && j && j.as_of){ asof.textContent=`As-of ${j.as_of}`; }
+        }catch(e){ /* noop */ }
+      }
+
       applyQueryDefaults();
       runSearch().catch(() => setStatus('Error loading'));
       map.on('click', (e) => {
@@ -486,16 +530,7 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       document.getElementById('use_radius').addEventListener('change', () => { runSearch(); });
       const clusterToggle = document.getElementById('use_cluster');
       if(clusterToggle){ clusterToggle.addEventListener('change', () => { renderMarkers(allRows); }); }
-      // Fetch as-of for footer
-      (async () => {
-        try{
-          const res = await fetch(new URL('/v1/meta', API));
-          const j = await res.json();
-          if(j && j.as_of){ document.querySelector('footer').innerHTML = `SDR as-of ${j.as_of}. Contains data from TWDB SDR.`; const asof=document.getElementById('asof'); if(asof) asof.textContent=`As-of ${j.as_of}`; }
-        }catch(e){
-          console.error('Failed to fetch /v1/meta:', e);
-        }
-      })();
+
       // Export CSV (POST)
       const exportBtn = document.getElementById('exportCsv');
       if(exportBtn){
