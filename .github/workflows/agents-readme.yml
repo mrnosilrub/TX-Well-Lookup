@@ -1,0 +1,38 @@
+name: Update Agents README
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'ground_truth/**'
+      - '.github/workflows/**'
+
+jobs:
+  update-agents-readme:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Generate agents README
+        run: |
+          python agents/tools/generate_agents_md.py
+          echo >> agents/README.md
+          echo >> agents/README.md
+          echo "## Conventions" >> agents/README.md
+          echo "- Do not transform in ground_truth; columns are TEXT; original header names preserved via column comments" >> agents/README.md
+          echo "- Non-tabular docs are ignored by the loader (ReadMe/Dictionary/etc.)" >> agents/README.md
+          echo "- Loader sanitizes inconsistent rows (pads/trims to header width)" >> agents/README.md
+
+      - name: Upload README artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: agents-readme
+          path: agents/README.md
+
+

@@ -18,6 +18,11 @@
 - **Object storage (Cloudflare R2)**: Optional place to store generated CSV/PDF files. The API can return a short‑lived signed URL so the browser can download without credentials.
 - **GitHub repo and workflows (CI/CD)**: Automate tasks like loading SDR into the DB and generating `docs/SCHEMA.md`. Deploys services across dev/staging/prod.
 
+#### Data “as-of” date
+- The SDR “as-of” date is computed as the maximum of plausible date fields in `ground_truth` (e.g., `WellData.DrillingEndDate`, `PlugData.PluggingDate`).
+- A helper script `ground_truth/tools/compute_as_of.py` writes `docs/AS_OF.md` with the current as-of date.
+- The CI smoke workflow runs the helper in dev to verify connectivity and compute the as-of value.
+
 ### The SDR “ground truth” layer (why it matters)
 
 - **Goal**: Keep a faithful, auditable copy of SDR so we can always trace back to the original.
