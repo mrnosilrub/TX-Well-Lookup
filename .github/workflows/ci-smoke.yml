@@ -33,11 +33,4 @@ jobs:
         run: |
           python scripts/ci_smoke_db.py --database-url "$DATABASE_URL"
 
-      - name: Compute SDR as-of date (info)
-        env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
-        run: |
-          python ground_truth/tools/compute_as_of.py --database-url "$DATABASE_URL" --schema ground_truth --out docs/AS_OF.md
-          echo "As-of file updated (not committing in this workflow)"
-
 
