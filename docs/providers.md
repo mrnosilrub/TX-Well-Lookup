@@ -69,5 +69,3 @@ Add additional rows as providers are chosen.
 - Enforce least privilege: scope tokens to environment and service.
 - Prefer short‑lived credentials via OIDC if provider supports it; otherwise, use provider vaults and time‑bound keys.
 - See `SECURITY.md` for access control, MFA, and incident response.
-
-
