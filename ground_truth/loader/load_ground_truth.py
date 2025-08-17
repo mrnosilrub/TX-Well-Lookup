@@ -27,6 +27,8 @@ import sys
 import zipfile
 import re
 from typing import Dict, List, Tuple
+import csv
+import tempfile
 
 import psycopg2
 from psycopg2.extensions import connection as PGConnection
@@ -132,8 +134,30 @@ def _create_table(cur: PGCursor, schema: str, table_raw: str, headers_raw: List[
 
 
 def _copy_into(cur: PGCursor, zf: zipfile.ZipFile, member: str, schema: str, table_raw: str, columns: List[str]) -> int:
-	# Use COPY FROM STDIN; supply quoted column list to avoid header alignment surprises
-	# Default CSV quote is double-quote; omit explicit QUOTE clause to avoid Python quoting issues
+	# Sanitize data into a temporary CSV that matches the header column count exactly
+	# - Uses Python csv reader (delimiter='|', quotechar='"') for robust parsing
+	# - Pads missing fields with empty strings; trims extra fields beyond header count
+	# - Writes a new header matching adjusted column identifiers so HEADER true works
+	n = len(columns)
+	with zf.open(member, "r") as f_in:
+		text = io.TextIOWrapper(f_in, encoding="latin-1", errors="replace", newline="")
+		reader = csv.reader(text, delimiter='|')
+		try:
+			_ = next(reader)
+		except StopIteration:
+			return 0
+		tmp_path = None
+		with tempfile.NamedTemporaryFile("w", delete=False, encoding="latin-1", newline="") as f_out:
+			writer = csv.writer(f_out, delimiter='|', lineterminator='\n', quoting=csv.QUOTE_MINIMAL)
+			writer.writerow(columns)
+			for row in reader:
+				if len(row) < n:
+					row = list(row) + [""] * (n - len(row))
+				elif len(row) > n:
+					row = list(row[:n])
+				writer.writerow(row)
+			tmp_path = f_out.name
+	# COPY from sanitized temp file
 	copy_sql = sql.SQL(
 		"COPY {}.{} ({}) FROM STDIN WITH (FORMAT csv, DELIMITER '|', HEADER true, ENCODING 'LATIN1')"
 	).format(
@@ -141,9 +165,11 @@ def _copy_into(cur: PGCursor, zf: zipfile.ZipFile, member: str, schema: str, tab
 		_quote_ident(table_raw),
 		sql.SQL(', ').join([_quote_ident(c) for c in columns]),
 	)
-	with zf.open(member, "r") as f:
-		# Provide raw file bytes to COPY
-		cur.copy_expert(copy_sql.as_string(cur.connection), f)  # type: ignore[arg-type]
+	with open(tmp_path, "rb") as f_bin:
+		cur.copy_expert(copy_sql.as_string(cur.connection), f_bin)
+	# Return loaded row count
+	cur.execute(sql.SQL("SELECT COUNT(*) FROM {}.{}").format(_quote_ident(schema), _quote_ident(table_raw)))
+	return int(cur.fetchone()[0] or 0)
 	# Return loaded row count
 	cur.execute(sql.SQL("SELECT COUNT(*) FROM {}.{}").format(_quote_ident(schema), _quote_ident(table_raw)))
 	return int(cur.fetchone()[0] or 0)
