@@ -1,10 +1,6 @@
 name: Ground Truth Schema Doc
 
 on:
-  push:
-    paths:
-      - 'ground_truth/**'
-      - '.github/workflows/ground-truth-schema.yml'
   workflow_dispatch:
     inputs:
       env:

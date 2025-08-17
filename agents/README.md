@@ -37,6 +37,11 @@ COMMIT;
 - Non-tabular docs are ignored by the loader (ReadMe/Dictionary/etc.)
 - Loader sanitizes inconsistent rows (pads/truncates to header width)
 
+## Maintenance
+- Keep this file current when workflows, secrets, or procedures change
+- Capture noteworthy repo changes in `CHANGELOG.md` (top-level)
+- Run the schema doc workflow manually after successful loads to update `ground_truth/SCHEMA.md`
+
 ## Next Steps (Design)
 - Define minimal views on top of ground_truth for the website
 - Plan normalized schemas separately under `legacy/` (reference only) and new design docs in `docs/`
