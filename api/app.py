@@ -32,6 +32,10 @@ ALLOWED_ORIGINS = [s.strip() for s in os.getenv(
     "ALLOWED_ORIGINS",
     "http://127.0.0.1:4321,http://localhost:4321"
 ).split(",") if s.strip()]
+RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "true").lower() in ("1", "true", "yes")
+RATE_LIMIT_PER_MIN = int(os.getenv("RATE_LIMIT_PER_MIN", "120"))
+RATE_LIMIT_WINDOW_SEC = int(os.getenv("RATE_LIMIT_WINDOW_SEC", "60"))
+STATEMENT_TIMEOUT_MS = int(os.getenv("STATEMENT_TIMEOUT_MS", "15000"))
 
 
 class SearchItem(BaseModel):
@@ -70,6 +74,38 @@ app.add_middleware(GZipMiddleware, minimum_size=1024)
 async def access_log_middleware(request: Request, call_next):
     request_id = uuid.uuid4().hex
     request.state.request_id = request_id
+    # Simple in-memory fixed-window rate limiter per client IP
+    if RATE_LIMIT_ENABLED:
+        ip = request.client.host if request.client else "unknown"
+        now = int(time.time())
+        window = now // RATE_LIMIT_WINDOW_SEC
+        bucket = _rate_buckets.get(ip)
+        if bucket is None or bucket[0] != window:
+            _rate_buckets[ip] = (window, 1)
+            remaining = max(0, RATE_LIMIT_PER_MIN - 1)
+        else:
+            count = bucket[1] + 1
+            _rate_buckets[ip] = (window, count)
+            remaining = max(0, RATE_LIMIT_PER_MIN - count)
+            if count > RATE_LIMIT_PER_MIN:
+                retry_after = (window + 1) * RATE_LIMIT_WINDOW_SEC - now
+                log = {
+                    "event": "rate_limit",
+                    "request_id": request_id,
+                    "ip": ip,
+                    "method": request.method,
+                    "path": request.url.path,
+                }
+                print(json.dumps(log), flush=True)
+                return JSONResponse(status_code=429, content={
+                    "detail": "Too Many Requests",
+                    "request_id": request_id
+                }, headers={
+                    "X-RateLimit-Limit": str(RATE_LIMIT_PER_MIN),
+                    "X-RateLimit-Remaining": str(0),
+                    "Retry-After": str(retry_after),
+                    "X-Request-ID": request_id,
+                })
     start = time.perf_counter()
     status_code = 500
     try:
@@ -104,6 +140,14 @@ async def access_log_middleware(request: Request, call_next):
         }
         print(json.dumps(log), flush=True)
         response.headers["X-Request-ID"] = request_id
+        if RATE_LIMIT_ENABLED and request.client:
+            # attach remaining estimate when available
+            ip = request.client.host
+            b = _rate_buckets.get(ip)
+            if b and b[0] == (int(time.time()) // RATE_LIMIT_WINDOW_SEC):
+                remaining = max(0, RATE_LIMIT_PER_MIN - b[1])
+                response.headers["X-RateLimit-Limit"] = str(RATE_LIMIT_PER_MIN)
+                response.headers["X-RateLimit-Remaining"] = str(remaining)
         return response
 
 
@@ -121,6 +165,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": "Internal Server Error", "request_id": request_id}, headers={"X-Request-ID": request_id})
 
 pool: Optional[psycopg2.pool.SimpleConnectionPool] = None
+_rate_buckets: dict[str, tuple[int, int]] = {}
 
 
 @app.on_event("startup")
@@ -164,6 +209,12 @@ def _get_conn():
                 pass
             pool = psycopg2.pool.SimpleConnectionPool(minconn=1, maxconn=5, dsn=DATABASE_URL)
             conn = pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                # Apply statement_timeout (ms) per connection to bound long queries
+                cur.execute("SET LOCAL statement_timeout = %s", (STATEMENT_TIMEOUT_MS,))
+        except Exception:
+            pass
         return conn
     except Exception:
         # Rebuild the pool on failure (e.g., Neon connection dropped)
@@ -178,6 +229,30 @@ def _get_conn():
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/live")
+def live():
+    # basic liveness
+    return {"live": True}
+
+
+@app.get("/ready")
+def ready():
+    # basic readiness: can we get a connection
+    if not DATABASE_URL:
+        return {"ready": True}
+    try:
+        c = _get_conn()
+        if c:
+            try:
+                pool and pool.putconn(c)
+            except Exception:
+                pass
+            return {"ready": True}
+    except Exception:
+        pass
+    return JSONResponse(status_code=503, content={"ready": False})
 
 
 @app.get("/v1/wells/{well_id}", response_model=SearchItem)
