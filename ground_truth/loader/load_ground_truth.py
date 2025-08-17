@@ -95,7 +95,20 @@ def _read_header_from_zip(zf: zipfile.ZipFile, member: str, encoding: str = "lat
 			return []
 		text = first.decode(encoding, errors="replace").rstrip("\n\r")
 		# Split on pipe without CSV semantics (header seldom contains quotes)
-		return [h for h in text.split("|")] if text else []
+		fields = [h for h in text.split("|")] if text else []
+		# Require at least 2 columns to treat as tabular; else skip (e.g., ReadMe files)
+		return fields if len(fields) >= 2 else []
+
+
+def _is_data_member(member: str) -> bool:
+	"""Heuristically decide if a .txt looks like a tabular data file.
+
+	Skips obvious non-tabular docs like ReadMe, Dictionary, Manifest, License, Notes.
+	"""
+	base = os.path.basename(member).lower()
+	if any(tok in base for tok in ["readme", "dictionary", "manifest", "license", "notes", "howto", "how_to"]):
+		return False
+	return True
 
 
 def _create_table(cur: PGCursor, schema: str, table_raw: str, headers_raw: List[str]) -> Tuple[List[str], Dict[str, str]]:
@@ -147,7 +160,7 @@ def main() -> int:
 		with conn.cursor() as cur:
 			_create_schema(cur, args.schema)
 			with zipfile.ZipFile(args.zip_path, "r") as zf:
-				members = [m for m in zf.namelist() if m.lower().endswith(".txt") and not m.endswith("/")]
+				members = [m for m in zf.namelist() if m.lower().endswith(".txt") and not m.endswith("/") and _is_data_member(m)]
 				members.sort()
 				summary: List[Tuple[str, int]] = []
 				for member in members:
