@@ -6,25 +6,29 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>TX Well Lookup</title>
+    <meta name="x-api" content={PUBLIC_API_URL} />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
       :root{--bg:#0b1020;--panel:#121a33;--muted:#e2e8f0;--accent:#5eead4;--line:#263255}
+      *{box-sizing:border-box}
       body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg);color:#fff}
       header, footer{padding:14px 20px;border-bottom:1px solid var(--line)}
       header strong{letter-spacing:0.3px}
       .app{display:grid;grid-template-columns:340px 1fr;gap:0;min-height:calc(100vh - 96px)}
       .sidebar{border-right:1px solid var(--line);padding:16px 14px 24px;background:var(--panel)}
-      .content{display:grid;grid-template-rows:1fr 280px}
-      .map{min-height:400px}
+      .content{display:grid;grid-template-rows:minmax(420px,1fr) 280px}
+      .map{min-height:420px}
       .results{border-top:1px solid var(--line);overflow:auto;background:var(--panel)}
       label{display:block;font-size:12px;color:var(--muted);margin-top:10px}
       input, select{width:100%;padding:10px;margin-top:6px;border:1px solid var(--line);border-radius:10px;background:#0e1730;color:#fff}
+      .btns{display:flex;gap:10px}
       button{margin-top:14px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#101a38;color:#fff;cursor:pointer}
       button:hover{border-color:#3b82f6}
       table{width:100%;border-collapse:collapse;font-size:14px}
-      thead{position:sticky;top:0;background:#0f1731}
+      thead{position:sticky;top:0;background:#0f1731;z-index:1}
       th, td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
       tr:hover{background:#0e1836}
+      #status{padding:8px 12px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line)}
     </style>
   </head>
   <body>
@@ -61,15 +65,22 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
               </label>
             </div>
           </div>
-          <div style="display:flex;gap:8px">
+          <div class="btns">
             <button type="submit">Apply</button>
             <button type="button" id="reset">Reset</button>
           </div>
+          <label>Address (optional)
+            <input name="q" placeholder="123 Main St, TX" />
+          </label>
+          <label>Radius (meters)
+            <input name="radius_m" type="number" value="1609" />
+          </label>
         </form>
       </div>
       <div class="content">
         <div id="map" class="map"></div>
         <div class="results">
+          <div id="status">Ready</div>
           <table>
             <thead>
               <tr><th>Well ID</th><th>Owner</th><th>County</th><th>Depth (ft)</th><th>Completed</th></tr>
@@ -85,17 +96,20 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
     </footer>
     <script type="module">
       import L from 'https://cdn.skypack.dev/leaflet@1.9.4';
-      const API = `${PUBLIC_API_URL}`;
+      // Read API base URL from meta tag injected by Astro
+      const API = (document.querySelector('meta[name="x-api"]')?.getAttribute('content')) || 'http://127.0.0.1:8001';
       const map = L.map('map').setView([31.0, -99.0], 6);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM' }).addTo(map);
       let markers = [];
+      function setStatus(text){ document.getElementById('status').textContent = text; }
 
       async function fetchResults(params){
         const url = new URL('/v1/search', API);
         Object.entries(params).forEach(([k,v]) => { if(v!=='' && v!=null) url.searchParams.set(k, v); });
-        const res = await fetch(url);
+        const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
         if(!res.ok){ throw new Error('Failed'); }
-        return await res.json();
+        const text = await res.text();
+        try { return JSON.parse(text); } catch (e) { console.warn('Non-JSON response', text); return []; }
       }
 
       function clearMarkers(){ markers.forEach(m => map.removeLayer(m)); markers = []; }
@@ -121,30 +135,57 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
         }
         if(pts.length){
           const b = L.latLngBounds(pts);
-          map.fitBounds(b.pad(0.2));
+          setTimeout(() => { map.invalidateSize(); map.fitBounds(b.pad(0.2)); }, 0);
         }
       }
 
       async function runSearch(){
         const form = document.getElementById('filters');
         const data = Object.fromEntries(new FormData(form).entries());
-        const items = await fetchResults({
-          county: data.county,
+        setStatus('Loading...');
+        const params = {
+          county: data.county || undefined,
           depth_min: data.depth_min || undefined,
           depth_max: data.depth_max || undefined,
           date_from: data.date_from || undefined,
           date_to: data.date_to || undefined,
           limit: 100,
-        });
+        };
+        // If there is a map center and radius set, include them
+        const r = Number(data.radius_m || 0);
+        if(!Number.isNaN(r) && r > 0){
+          const c = map.getCenter();
+          params.lat = c.lat;
+          params.lon = c.lng;
+          params.radius_m = r;
+        }
+        const items = await fetchResults(params);
         // Support both array and {items: [...]} shapes
         const rows = Array.isArray(items) ? items : (items.items || []);
         renderRows(rows);
         renderMarkers(rows);
+        setStatus(rows.length ? `${rows.length} results` : 'No results');
       }
-
-      document.getElementById('filters').addEventListener('submit', (e) => { e.preventDefault(); runSearch(); });
-      document.getElementById('reset').addEventListener('click', () => { (document.getElementById('filters')).reset(); runSearch(); });
-      runSearch();
+      function applyQueryDefaults(){
+        const params = new URLSearchParams(window.location.search);
+        const county = params.get('county');
+        if(county){ document.querySelector('input[name="county"]').value = county; }
+        const df = params.get('date_from'); if(df) document.querySelector('input[name="date_from"]').value = df;
+        const dt = params.get('date_to'); if(dt) document.querySelector('input[name="date_to"]').value = dt;
+      }
+      document.getElementById('filters').addEventListener('submit', (e) => { e.preventDefault(); runSearch().catch(() => setStatus('Error loading')); });
+      document.getElementById('reset').addEventListener('click', () => { (document.getElementById('filters')).reset(); setStatus('Ready'); renderRows([]); clearMarkers(); });
+      applyQueryDefaults();
+      runSearch().catch(() => setStatus('Error loading'));
+      map.on('click', (e) => { map.setView(e.latlng, 12); runSearch(); });
+      // Fetch as-of for footer
+      (async () => {
+        try{
+          const res = await fetch(new URL('/v1/meta', API));
+          const j = await res.json();
+          if(j && j.as_of){ document.querySelector('footer').innerHTML = `SDR as-of ${j.as_of}. Contains data from TWDB SDR.`; }
+        }catch{}
+      })();
     </script>
   </body>
   </html>
