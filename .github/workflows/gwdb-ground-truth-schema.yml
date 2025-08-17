@@ -28,4 +28,12 @@ jobs:
           python ground_truth/tools/generate_schema_md.py --database-url "$DATABASE_URL" --schema gwdb_ground_truth --out docs/SCHEMA_GWDB.md
           echo "Generated docs/SCHEMA_GWDB.md"
 
+      - name: Upload GWDB schema doc artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: schema-gwdb-ground-truth-md
+          path: docs/SCHEMA_GWDB.md
+          if-no-files-found: error
+          retention-days: 30
+
 
