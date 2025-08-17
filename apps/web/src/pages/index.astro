@@ -493,16 +493,15 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
           if(j && j.as_of){ document.querySelector('footer').innerHTML = `SDR as-of ${j.as_of}. Contains data from TWDB SDR.`; const asof=document.getElementById('asof'); if(asof) asof.textContent=`As-of ${j.as_of}`; }
         }catch{}
       })();
-      // Export CSV
+      // Export CSV (POST)
       const exportBtn = document.getElementById('exportCsv');
       if(exportBtn){
         exportBtn.addEventListener('click', async () => {
           try{
             exportBtn.disabled = true; const prev = exportBtn.textContent; exportBtn.textContent = 'Exporting…';
-            const params = gatherFilters();
+            const body = gatherFilters();
             const url = new URL('/v1/search.csv', API);
-            Object.entries(params).forEach(([k,v]) => { if(v!=null && v!=='') url.searchParams.set(k, String(v)); });
-            const res = await fetch(url, { mode: 'cors' });
+            const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), mode: 'cors' });
             const blob = await res.blob();
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);
@@ -517,17 +516,15 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
         });
       }
 
-      // Export PDF
+      // Export PDF (POST)
       const exportPdfBtn = document.getElementById('exportPdf');
       if(exportPdfBtn){
         exportPdfBtn.addEventListener('click', async () => {
           try{
             exportPdfBtn.disabled = true; const prev = exportPdfBtn.textContent; exportPdfBtn.textContent = 'Exporting…';
-            const params = gatherFilters();
-            const url = new URL('/v1/reports', API);
-            url.searchParams.set('format','pdf');
-            Object.entries(params).forEach(([k,v]) => { if(v!=null && v!=='') url.searchParams.set(k, String(v)); });
-            const res = await fetch(url, { mode: 'cors' });
+            const body = gatherFilters();
+            const url = new URL('/v1/reports?format=pdf', API);
+            const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), mode: 'cors' });
             const blob = await res.blob();
             const a = document.createElement('a');
             a.href = URL.createObjectURL(blob);

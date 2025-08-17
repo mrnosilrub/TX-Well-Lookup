@@ -34,6 +34,17 @@ class SearchItem(BaseModel):
     date_completed: Optional[str] = None
 
 
+class ReportFilters(BaseModel):
+    county: Optional[str] = None
+    depth_min: Optional[float] = None
+    depth_max: Optional[float] = None
+    date_from: Optional[str] = None
+    date_to: Optional[str] = None
+    lat: Optional[float] = None
+    lon: Optional[float] = None
+    radius_m: Optional[int] = None
+    limit: Optional[int] = 100
+
 app = FastAPI(title="TX Well Lookup API", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
@@ -197,18 +208,19 @@ def search(
             pool.putconn(conn)
 
 
-@app.get("/v1/search.csv")
+@app.post("/v1/search.csv")
 def export_search_csv(
-    county: Optional[str] = Query(default=None),
-    depth_min: Optional[float] = Query(default=None),
-    depth_max: Optional[float] = Query(default=None),
-    date_from: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
-    date_to: Optional[str] = Query(default=None, description="YYYY-MM-DD"),
-    lat: Optional[float] = Query(default=None),
-    lon: Optional[float] = Query(default=None),
-    radius_m: Optional[int] = Query(default=None),
-    limit: int = Query(default=1000, ge=1, le=10000),
+    filters: ReportFilters | None = None,
 ):
+    county = filters.county if filters else None
+    depth_min = filters.depth_min if filters else None
+    depth_max = filters.depth_max if filters else None
+    date_from = filters.date_from if filters else None
+    date_to = filters.date_to if filters else None
+    lat = filters.lat if filters else None
+    lon = filters.lon if filters else None
+    radius_m = filters.radius_m if filters else None
+    limit = (filters.limit if (filters and filters.limit) else 1000)
     """Export current filtered results as CSV. Columns match list view and include lat/lon."""
     if pool is None and not DATABASE_URL:
         # Stub empty CSV
@@ -284,19 +296,21 @@ def export_search_csv(
             pool.putconn(conn)
 
 
-@app.get("/v1/reports", response_class=StreamingResponse)
+@app.post("/v1/reports", response_class=StreamingResponse)
 def export_pdf(
     format: str = Query(default="pdf", pattern="^(pdf)$"),
-    county: Optional[str] = Query(default=None),
-    depth_min: Optional[float] = Query(default=None),
-    depth_max: Optional[float] = Query(default=None),
-    date_from: Optional[str] = Query(default=None),
-    date_to: Optional[str] = Query(default=None),
-    lat: Optional[float] = Query(default=None),
-    lon: Optional[float] = Query(default=None),
-    radius_m: Optional[int] = Query(default=None),
-    limit: int = Query(default=100, ge=1, le=1000),
+    filters: ReportFilters | None = None,
 ):
+    # Unpack filters (supports both body and missing body)
+    county = filters.county if filters else None
+    depth_min = filters.depth_min if filters else None
+    depth_max = filters.depth_max if filters else None
+    date_from = filters.date_from if filters else None
+    date_to = filters.date_to if filters else None
+    lat = filters.lat if filters else None
+    lon = filters.lon if filters else None
+    radius_m = filters.radius_m if filters else None
+    limit = (filters.limit if (filters and filters.limit) else 100)
     """Simple PDF export summarizing current result set (first page list)."""
     # Reuse the same filter building
     clauses: List[str] = []

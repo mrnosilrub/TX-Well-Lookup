@@ -125,3 +125,11 @@ Notes
 - Add CSV header comment or a small README describing field definitions and caveats.
 - Consider server‑side pagination/streaming for very large exports (>10k rows).
 
+### 12) PDF export polish (post‑M5)
+
+- **Branding/logo**: Add a small logo in the PDF header (configurable via env or file path).
+- **Bundled map pin**: Ship a local `marker-icon.png` under `api/assets/` and reference it for static map pins (avoid relying on `apps/web/node_modules`).
+- **HTTP method**: Switch `GET /v1/reports?format=pdf` to `POST /v1/reports` with JSON body for filters, aligning with the spec and avoiding very long URLs.
+- **Storage**: Optionally upload PDFs to R2 and return a short‑lived signed URL; keep streaming for small reports.
+- **Typography/spacing**: Final pass on fonts, spacing, and section balance; confirm OSM attribution.
+
