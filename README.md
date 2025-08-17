@@ -24,3 +24,23 @@ uvicorn app:app --reload --port 8000
 ```
 
 
+### Web App (Milestone 3–4)
+
+Run the Astro dev server:
+
+```bash
+cd apps/web
+npm install
+npm run dev
+```
+
+UI features:
+- Search + filters (county, depth, date, optional radius around map center)
+- Map pins synchronized with the results list
+- Dark/light theme toggle
+- As‑of date shown in header/footer (from API /v1/meta)
+- Export CSV (Milestone 4):
+  - Button in header labeled “Export CSV”
+  - Exports columns: `id, owner, county, lat, lon, depth_ft, date_completed`
+  - Uses current filters (including radius) and downloads a timestamped filename
+

@@ -76,3 +76,52 @@ Notes
 - Apply these in dev first; verify query plans are using the indexes (EXPLAIN ANALYZE), then promote.
 
 
+### 5) UI polish and accessibility (defer)
+
+- **Sorted headers (accessibility)**: Reflect sort state with `aria-sort` on the active `th` and ensure headers are keyboard-activable.
+- **Row focus and activation**: Rows should have a visible focus style (`:focus`) and Enter/Space should activate selection (in addition to click).
+- **Live regions**: Keep `#status` as `aria-live="polite"`; ensure the error banner uses `role="alert"` when shown.
+
+### 6) Empty and error states (audit)
+
+- **Copy and visibility**: Standardize messages for loading, empty (no results), and error with clear actions (retry/adjust filters).
+- **Network resilience**: Show error state on timeouts/network failures and recover on retry.
+
+### 7) Responsive/mobile QA (sub‑900px)
+
+- **Layout**: Verify map height, results scroll, and no horizontal scrolling inside the table.
+- **Tap targets**: Ensure interactive controls meet minimum touch sizes and spacing.
+- **Safari/iOS**: Quick sanity pass for input styling and sticky header behavior.
+
+### 8) Filter persistence (URL sync)
+
+- **Sync to URL**: Reflect current filters/sort/page to query params.
+- **Restore on load**: Read from URL on initial load so refresh/back/forward preserves state.
+
+### 9) Visual consistency
+
+- **Theme hover tones**: Confirm header hover/active tones look correct in light/dark.
+- **Inputs/selects**: Ensure text colors and borders are consistent across themes.
+- **Row interactions**: Finalize hover and active styles; selected marker style on the map matches the table selection.
+
+### 10) Performance and UX
+
+- **Debounce**: Debounce filter applies (e.g., 250–300 ms) to avoid excess fetches.
+- **Cancel in‑flight requests**: Use `AbortController` to cancel prior fetch when starting a new one.
+- **Page size**: Keep DOM light; paginate results and avoid creating unnecessary map markers.
+
+### 11) CSV export v2 (columns and metadata)
+
+- Add columns pending mapping from SDR:
+  - Identification: `well_status`
+  - Location details: `address`, `city`, `zip`
+  - Specs: `total_depth_ft`, `borehole_diameter_in`, `casing_depth_ft`, `screened_interval_ft`
+  - Water: `static_water_level_ft`, `yield_gpm`
+  - Use/type: `well_use`, `pump_type`
+  - Driller: `driller_name`, `driller_license`
+  - Aquifer: `aquifer_name`
+  - Links: `source_record_url` (if determinable)
+- Include `location_confidence` (near‑term add) to current CSV.
+- Add CSV header comment or a small README describing field definitions and caveats.
+- Consider server‑side pagination/streaming for very large exports (>10k rows).
+
