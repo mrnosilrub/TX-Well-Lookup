@@ -49,6 +49,8 @@ class SearchItem(BaseModel):
     lon: Optional[float] = None
     depth_ft: Optional[float] = None
     date_completed: Optional[str] = None
+    source: Optional[str] = None
+    source_id: Optional[str] = None
 
 
 class ReportFilters(BaseModel):
@@ -61,6 +63,7 @@ class ReportFilters(BaseModel):
     lon: Optional[float] = None
     radius_m: Optional[int] = None
     limit: Optional[int] = 100
+    source: Optional[str] = None  # 'sdr' | 'gwdb' | 'all'
 
 app = FastAPI(title="TX Well Lookup API", version="0.1.0")
 app.add_middleware(
@@ -229,6 +232,16 @@ def _get_conn():
         return pool.getconn()
 
 
+def _resolve_wells_table(source: Optional[str]) -> str:
+    s = (source or "sdr").lower()
+    if s == "sdr":
+        return "app.wells_sdr"
+    if s == "gwdb":
+        return "app.wells_gwdb"
+    # 'all' and any fallback
+    return "app.wells"
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
@@ -259,27 +272,28 @@ def ready():
 
 
 @app.get("/v1/wells/{well_id}", response_model=SearchItem)
-def get_well(well_id: str):
+def get_well(well_id: str, source: Optional[str] = Query(default="sdr", pattern="^(sdr|gwdb|all)$")):
     if pool is None and not DATABASE_URL:
         # Stub fallback
         return SearchItem(id=well_id)
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
+            table = _resolve_wells_table(source)
             cur.execute(
                 """
-                SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD')
-                FROM app.wells
+                SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD'), source, source_id
+                FROM {table}
                 WHERE id = %s
                 LIMIT 1
-                """,
+                """.format(table=table),
                 (well_id,),
             )
             row = cur.fetchone()
             if not row:
                 return SearchItem(id=well_id)
             return SearchItem(
-                id=row[0], owner=row[1], county=row[2], lat=row[3], lon=row[4], depth_ft=row[5], date_completed=row[6]
+                id=row[0], owner=row[1], county=row[2], lat=row[3], lon=row[4], depth_ft=row[5], date_completed=row[6], source=row[7], source_id=row[8]
             )
     finally:
         if pool is not None and conn is not None:
@@ -300,6 +314,7 @@ def search(
     lon: Optional[float] = Query(default=None),
     radius_m: Optional[int] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
+    source: Optional[str] = Query(default="sdr", pattern="^(sdr|gwdb|all)$"),
 ):
     if pool is None and not DATABASE_URL:
         # Stub fallback
@@ -336,9 +351,10 @@ def search(
         clauses.append("lon BETWEEN %s AND %s")
         params.extend([min_lon, max_lon])
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    table = _resolve_wells_table(source)
     sql = (
-        "SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD') "
-        "FROM app.wells " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
+        "SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD'), source, source_id "
+        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
     )
     params.append(limit)
     conn = _get_conn()
@@ -346,7 +362,7 @@ def search(
         with conn.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
-        return [SearchItem(id=r[0], owner=r[1], county=r[2], lat=r[3], lon=r[4], depth_ft=r[5], date_completed=r[6]) for r in rows]
+        return [SearchItem(id=r[0], owner=r[1], county=r[2], lat=r[3], lon=r[4], depth_ft=r[5], date_completed=r[6], source=r[7], source_id=r[8]) for r in rows]
     finally:
         if pool is not None and conn is not None:
             pool.putconn(conn)
@@ -365,13 +381,14 @@ def export_search_csv(
     lon = filters.lon if filters else None
     radius_m = filters.radius_m if filters else None
     limit = (filters.limit if (filters and filters.limit) else 1000)
+    source = (filters.source if filters and filters.source else "sdr")
     """Export current filtered results as CSV. Columns match list view and include lat/lon."""
     if pool is None and not DATABASE_URL:
         # Stub empty CSV
         def _empty_gen():
             s = io.StringIO()
             w = csv.writer(s)
-            w.writerow(["id", "owner", "county", "lat", "lon", "depth_ft", "date_completed"])
+            w.writerow(["id", "owner", "county", "lat", "lon", "depth_ft", "date_completed", "source", "source_id"])
             yield s.getvalue()
         filename = f"tx_wells_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}.csv"
         return StreamingResponse(_empty_gen(), media_type="text/csv", headers={
@@ -408,9 +425,10 @@ def export_search_csv(
         clauses.append("lon BETWEEN %s AND %s")
         params.extend([min_lon, max_lon])
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    table = _resolve_wells_table(source)
     sql = (
-        "SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD') "
-        "FROM app.wells " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
+        "SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD'), source, source_id "
+        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
     )
     params.append(limit)
 
@@ -423,11 +441,11 @@ def export_search_csv(
         def row_iter():
             sio = io.StringIO()
             writer = csv.writer(sio)
-            writer.writerow(["id", "owner", "county", "lat", "lon", "depth_ft", "date_completed"])
+            writer.writerow(["id", "owner", "county", "lat", "lon", "depth_ft", "date_completed", "source", "source_id"])
             yield sio.getvalue()
             sio.seek(0); sio.truncate(0)
             for r in rows:
-                writer.writerow([r[0], r[1] or "", r[2] or "", r[3] or "", r[4] or "", r[5] or "", r[6] or ""])
+                writer.writerow([r[0], r[1] or "", r[2] or "", r[3] or "", r[4] or "", r[5] or "", r[6] or "", r[7] or "", r[8] or ""])
                 yield sio.getvalue()
                 sio.seek(0); sio.truncate(0)
 
@@ -455,6 +473,7 @@ def export_pdf(
     lon = filters.lon if filters else None
     radius_m = filters.radius_m if filters else None
     limit = (filters.limit if (filters and filters.limit) else 100)
+    source = (filters.source if (filters and filters.source) else "sdr")
     """Simple PDF export summarizing current result set (first page list)."""
     # Reuse the same filter building
     clauses: List[str] = []
@@ -480,9 +499,10 @@ def export_pdf(
         clauses.append("lat BETWEEN %s AND %s"); params.extend([min_lat, max_lat])
         clauses.append("lon BETWEEN %s AND %s"); params.extend([min_lon, max_lon])
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    table = _resolve_wells_table(source)
     sql = (
-        "SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD') "
-        "FROM app.wells " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
+        "SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD'), source, source_id "
+        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
     )
     params.append(limit)
 
@@ -493,7 +513,7 @@ def export_pdf(
         with cn.cursor() as cur:
             cur.execute(sql, params)
             rs = cur.fetchall()
-            cur.execute("SELECT to_char(MAX(date_completed), 'YYYY-MM-DD') FROM app.wells")
+            cur.execute(f"SELECT to_char(MAX(date_completed), 'YYYY-MM-DD') FROM {table}")
             r = cur.fetchone()
             return rs, (r[0] if r and r[0] else None)
 
@@ -532,7 +552,7 @@ def export_pdf(
         when = datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')
         meta_parts = [f"Generated: {when}"]
         if as_of:
-            meta_parts.append(f"SDR as-of {as_of}")
+            meta_parts.append(f"as-of {as_of}")
         # Filter summary
         filt = []
         if county: filt.append(f"County: {county}")
@@ -612,12 +632,12 @@ def export_pdf(
         except Exception:
             pass
 
-        data = [["Well ID", "Owner", "County", "Depth (ft)", "Completed"]]
+        data = [["Well ID", "Owner", "County", "Depth (ft)", "Completed", "Source", "Source ID"]]
         for r in rows:
-            data.append([r[0], r[1] or "", r[2] or "", r[5] or "", r[6] or ""])
+            data.append([r[0], r[1] or "", r[2] or "", r[5] or "", r[6] or "", r[7] or "", r[8] or ""])
 
         # Column widths tuned for letter page
-        col_widths = [1.2*inch, 3.0*inch, 1.4*inch, 1.1*inch, 1.2*inch]
+        col_widths = [1.2*inch, 2.6*inch, 1.2*inch, 1.0*inch, 1.1*inch, 0.9*inch, 1.6*inch]
         tbl = Table(data, colWidths=col_widths, repeatRows=1)
         tbl.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1f2937')),
