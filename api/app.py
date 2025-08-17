@@ -54,6 +54,27 @@ def on_shutdown() -> None:
         pool = None
 
 
+def _get_conn():
+    """Get a DB connection, rebuilding the pool if needed.
+    Returns None if DATABASE_URL is not configured.
+    """
+    global pool
+    if not DATABASE_URL:
+        return None
+    if pool is None:
+        pool = psycopg2.pool.SimpleConnectionPool(minconn=1, maxconn=5, dsn=DATABASE_URL)
+    try:
+        return pool.getconn()
+    except Exception:
+        # Rebuild the pool on failure (e.g., Neon connection dropped)
+        try:
+            pool.closeall()
+        except Exception:
+            pass
+        pool = psycopg2.pool.SimpleConnectionPool(minconn=1, maxconn=5, dsn=DATABASE_URL)
+        return pool.getconn()
+
+
 @app.get("/health")
 def health():
     return {"ok": True}
@@ -61,10 +82,10 @@ def health():
 
 @app.get("/v1/wells/{well_id}", response_model=SearchItem)
 def get_well(well_id: str):
-    if pool is None:
+    if pool is None and not DATABASE_URL:
         # Stub fallback
         return SearchItem(id=well_id)
-    conn = pool.getconn()
+    conn = _get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(
@@ -83,7 +104,8 @@ def get_well(well_id: str):
                 id=row[0], owner=row[1], county=row[2], lat=row[3], lon=row[4], depth_ft=row[5], date_completed=row[6]
             )
     finally:
-        pool.putconn(conn)
+        if pool is not None and conn is not None:
+            pool.putconn(conn)
 
 
 @app.get("/v1/search", response_model=List[SearchItem])
@@ -98,7 +120,7 @@ def search(
     radius_m: Optional[int] = Query(default=None),
     limit: int = Query(default=50, ge=1, le=500),
 ):
-    if pool is None:
+    if pool is None and not DATABASE_URL:
         # Stub fallback
         return []
     clauses = []
@@ -113,11 +135,13 @@ def search(
         clauses.append("depth_ft <= %s")
         params.append(depth_max)
     if date_from:
-        clauses.append("date_completed >= %s")
+        clauses.append("date_completed >= %s::date")
         params.append(date_from)
     if date_to:
-        clauses.append("date_completed <= %s")
+        clauses.append("date_completed <= %s::date")
         params.append(date_to)
+    if date_from or date_to:
+        clauses.append("date_completed IS NOT NULL")
     # Simple radius filter using a bounding box on lat/lon (non-PostGIS)
     if lat is not None and lon is not None and radius_m is not None and radius_m > 0:
         delta_lat = radius_m / 111_320.0
@@ -136,27 +160,29 @@ def search(
         "FROM app.wells " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
     )
     params.append(limit)
-    conn = pool.getconn()
+    conn = _get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute(sql, params)
             rows = cur.fetchall()
         return [SearchItem(id=r[0], owner=r[1], county=r[2], lat=r[3], lon=r[4], depth_ft=r[5], date_completed=r[6]) for r in rows]
     finally:
-        pool.putconn(conn)
+        if pool is not None and conn is not None:
+            pool.putconn(conn)
 
 
 @app.get("/v1/meta")
 def meta():
-    if pool is None:
+    if pool is None and not DATABASE_URL:
         return {"as_of": None}
-    conn = pool.getconn()
+    conn = _get_conn()
     try:
         with conn.cursor() as cur:
             cur.execute("SELECT to_char(MAX(date_completed), 'YYYY-MM-DD') FROM app.wells")
             row = cur.fetchone()
             return {"as_of": row[0] if row and row[0] else None}
     finally:
-        pool.putconn(conn)
+        if pool is not None and conn is not None:
+            pool.putconn(conn)
 
 

@@ -8,32 +8,64 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
     <title>TX Well Lookup</title>
     <meta name="x-api" content={PUBLIC_API_URL} />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
     <style>
-      :root{--bg:#0b1020;--panel:#121a33;--muted:#e2e8f0;--accent:#5eead4;--line:#263255}
+      :root{--bg:#0f172a;--panel:#111827;--muted:#94a3b8;--accent:#38bdf8;--line:#1f2937;--text:#e2e8f0}
+      [data-theme='dark']{--bg:#0f172a;--panel:#111827;--muted:#94a3b8;--accent:#38bdf8;--line:#1f2937;--text:#e2e8f0}
+      [data-theme='light']{--bg:#f8fafc;--panel:#ffffff;--muted:#4b5563;--accent:#2563eb;--line:#e5e7eb;--text:#111827}
       *{box-sizing:border-box}
-      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg);color:#fff}
-      header, footer{padding:14px 20px;border-bottom:1px solid var(--line)}
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg);color:var(--text)}
+      header, footer{padding:16px 20px;border-bottom:1px solid var(--line);background:var(--panel);color:var(--text)}
       header strong{letter-spacing:0.3px}
-      .app{display:grid;grid-template-columns:340px 1fr;gap:0;min-height:calc(100vh - 96px)}
-      .sidebar{border-right:1px solid var(--line);padding:16px 14px 24px;background:var(--panel)}
-      .content{display:grid;grid-template-rows:minmax(420px,1fr) 280px}
-      .map{min-height:420px}
+      .app{display:grid;grid-template-columns:360px minmax(0,1fr);gap:0;min-height:calc(100vh - 96px)}
+      .sidebar{border-right:1px solid var(--line);padding:18px 16px 24px;background:var(--panel);position:relative;z-index:3;isolation:isolate}
+      #filters{display:flex;flex-direction:column;gap:12px;width:100%}
+      .content{display:grid;grid-template-rows:minmax(420px,1fr) 300px;position:relative;z-index:1}
+      .map{min-height:420px;position:relative;z-index:0}
       .results{border-top:1px solid var(--line);overflow:auto;background:var(--panel)}
       label{display:block;font-size:12px;color:var(--muted);margin-top:10px}
-      input, select{width:100%;padding:10px;margin-top:6px;border:1px solid var(--line);border-radius:10px;background:#0e1730;color:#fff}
+      input, select{width:100%;padding:10px;margin-top:6px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text)}
+      input:focus, select:focus, button:focus{outline:2px solid var(--accent);outline-offset:2px}
       .btns{display:flex;gap:10px}
-      button{margin-top:14px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#101a38;color:#fff;cursor:pointer}
-      button:hover{border-color:#3b82f6}
-      table{width:100%;border-collapse:collapse;font-size:14px}
-      thead{position:sticky;top:0;background:#0f1731;z-index:1}
+      button{margin-top:14px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer}
+      button:hover{border-color:var(--accent);background:color-mix(in srgb, var(--panel) 90%, var(--accent))}
+      #theme{margin-top:0;padding:8px 10px;border-radius:8px;line-height:1;display:inline-flex;align-items:center;gap:6px;background:var(--panel);color:var(--text);border:1px solid var(--line)}
+      table{width:100%;border-collapse:collapse;font-size:14px;color:var(--text)}
+      thead{position:sticky;top:0;background:color-mix(in srgb, var(--panel) 80%, var(--text) 20%);z-index:1}
+      th.sortable{cursor:pointer}
+      th.sortable:hover{color:color-mix(in srgb, var(--accent) 70%, var(--text))}
       th, td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
-      tr:hover{background:#0e1836}
-      #status{padding:8px 12px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line)}
+      tr:hover{background:color-mix(in srgb, var(--accent) 10%, var(--panel))}
+      tr.row-active{background:#102042}
+      #status{padding:8px 12px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;background:var(--panel)}
+      .spinner{width:14px;height:14px;border:2px solid #334155;border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite}
+      @keyframes spin{to{transform:rotate(360deg)}}
+      .toggle{display:flex;align-items:flex-start;gap:10px;margin-top:14px;color:var(--text);flex-wrap:wrap}
+      .toggle input{flex:0 0 auto;margin-top:2px}
+      .toggle span{flex:1 1 auto;color:var(--text);font-size:14px;display:block;line-height:1.4;white-space:normal;max-width:100%}
+      .banner{padding:10px 12px;background:#421e1e;color:#fecaca;border-bottom:1px solid #7f1d1d;display:none}
+      .banner.show{display:block}
+      #mapOverlay{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.15);z-index:5}
+      #mapOverlay.show{display:flex}
+      @media (max-width: 900px){
+        .app{grid-template-columns:1fr}
+        .sidebar{border-right:0;border-bottom:1px solid var(--line)}
+        .content{grid-template-rows:360px auto}
+      }
     </style>
   </head>
   <body>
     <header>
-      <strong>TX Well Lookup</strong>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <strong>TX Well Lookup</strong>
+        <div style="display:flex;align-items:center;gap:12px">
+          <span id="asof" style="font-size:12px;color:var(--muted)"></span>
+          <button id="theme" type="button" aria-label="Toggle theme">Toggle theme</button>
+        </div>
+      </div>
     </header>
     <div class="app">
       <div class="sidebar">
@@ -41,6 +73,12 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
           <label>County
             <input name="county" placeholder="e.g., Galveston" />
           </label>
+          <label>Address or place (optional)
+            <input name="addr" placeholder="e.g., 100 Congress Ave, Austin" />
+          </label>
+          <div class="btns">
+            <button type="button" id="geocode">Find address</button>
+          </div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
             <div>
               <label>Depth min (ft)
@@ -69,25 +107,42 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
             <button type="submit">Apply</button>
             <button type="button" id="reset">Reset</button>
           </div>
-          <label>Address (optional)
-            <input name="q" placeholder="123 Main St, TX" />
-          </label>
+          <div class="toggle">
+            <input id="use_radius" type="checkbox" />
+            <span>Enable radius search around map center</span>
+          </div>
           <label>Radius (meters)
             <input name="radius_m" type="number" value="1609" />
           </label>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px">Tip: click on the map to set the center when radius is enabled.</div>
         </form>
       </div>
       <div class="content">
-        <div id="map" class="map"></div>
+        <div id="map" class="map"><div id="mapOverlay"><span class="spinner"></span></div></div>
         <div class="results">
-          <div id="status">Ready</div>
+          <div id="banner" class="banner" role="alert"></div>
+          <div id="status" aria-live="polite">Ready</div>
           <table>
+            <colgroup>
+              <col style="width:14%"><col style="width:36%"><col style="width:20%"><col style="width:15%"><col style="width:15%">
+            </colgroup>
             <thead>
-              <tr><th>Well ID</th><th>Owner</th><th>County</th><th>Depth (ft)</th><th>Completed</th></tr>
+              <tr>
+                <th data-key="id" class="sortable">Well ID</th>
+                <th data-key="owner" class="sortable">Owner</th>
+                <th data-key="county" class="sortable">County</th>
+                <th data-key="depth_ft" class="sortable">Depth (ft)</th>
+                <th data-key="date_completed" class="sortable">Completed</th>
+              </tr>
             </thead>
             <tbody id="rows">
             </tbody>
           </table>
+          <div id="pager" style="display:flex;align-items:center;gap:10px;padding:10px;border-top:1px solid var(--line)">
+            <button id="prev" type="button">Prev</button>
+            <span id="pageinfo" style="font-size:12px;color:var(--muted)"></span>
+            <button id="next" type="button">Next</button>
+          </div>
         </div>
       </div>
     </div>
@@ -101,48 +156,107 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
       const map = L.map('map').setView([31.0, -99.0], 6);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM' }).addTo(map);
       let markers = [];
-      function setStatus(text){ document.getElementById('status').textContent = text; }
+      const markersById = new Map();
+      let centerMarker = null;
+      let radiusCircle = null;
+      let selectedCenter = null;
+      let suppressFitBounds = false;
+      function setStatus(text, loading=false){
+        const el = document.getElementById('status');
+        el.innerHTML = '';
+        if(loading){ const s = document.createElement('span'); s.className='spinner'; el.appendChild(s); }
+        el.appendChild(document.createTextNode(text));
+      }
 
       async function fetchResults(params){
         const url = new URL('/v1/search', API);
         Object.entries(params).forEach(([k,v]) => { if(v!=='' && v!=null) url.searchParams.set(k, v); });
-        const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
-        if(!res.ok){ throw new Error('Failed'); }
+        const res = await fetch(url, { headers: { 'Accept': 'application/json' }, mode: 'cors' });
+        if(!res.ok){ const err = await res.text(); console.error('Search failed', res.status, err); throw new Error(`HTTP ${res.status}`); }
         const text = await res.text();
-        try { return JSON.parse(text); } catch (e) { console.warn('Non-JSON response', text); return []; }
+        try { return JSON.parse(text); } catch (e) { console.error('Invalid JSON from API', text); throw new Error('Invalid JSON'); }
       }
 
-      function clearMarkers(){ markers.forEach(m => map.removeLayer(m)); markers = []; }
+      function clearMarkers(){ markers.forEach(m => map.removeLayer(m)); markers = []; markersById.clear(); }
+      function setBanner(text){ const b = document.getElementById('banner'); if(text){ b.textContent = text; b.classList.add('show'); } else { b.classList.remove('show'); b.textContent=''; } }
+      function setMapLoading(on){ const ov = document.getElementById('mapOverlay'); if(on){ ov.classList.add('show'); } else { ov.classList.remove('show'); } }
       function renderRows(items){
         const tbody = document.getElementById('rows');
         tbody.innerHTML = '';
         for(const it of items){
           const tr = document.createElement('tr');
           tr.innerHTML = `<td>${it.id}</td><td>${it.owner||''}</td><td>${it.county||''}</td><td>${it.depth_ft??''}</td><td>${it.date_completed||''}</td>`;
-          tr.addEventListener('click', () => { if(it.lat && it.lon){ map.setView([it.lat, it.lon], 12); }});
+          tr.addEventListener('click', () => {
+            if(it.lat && it.lon){ map.setView([it.lat, it.lon], 12); }
+            const m = markersById.get(it.id);
+            if(m){ m.openPopup(); highlightRow(it.id); }
+          });
+          tr.dataset.id = it.id;
+          tbody.appendChild(tr);
+        }
+        if(items.length === 0){
+          const tr = document.createElement('tr');
+          tr.innerHTML = '<td colspan="5" style="color:var(--muted);padding:16px">No results. Try widening your filters or moving the map.</td>';
           tbody.appendChild(tr);
         }
       }
+      let cluster;
+      function ensureCluster(){ if(!cluster){ cluster = L.markerClusterGroup(); map.addLayer(cluster); } }
       function renderMarkers(items){
-        clearMarkers();
+        clearMarkers(); ensureCluster(); cluster.clearLayers();
         const pts = [];
         for(const it of items){
           if(it.lat && it.lon){
-            const m = L.marker([it.lat, it.lon]).addTo(map).bindPopup(`${it.id}<br/>${it.owner||''}`);
-            markers.push(m);
+            const html = `<strong>${it.id}</strong><br/>${it.owner||''}<br/>${it.county||''}<br/>Depth: ${it.depth_ft??''} ft<br/>Completed: ${it.date_completed||''}`;
+            const m = L.marker([it.lat, it.lon]).bindPopup(html);
+            m.on('click', () => highlightRow(it.id));
+            cluster.addLayer(m); markers.push(m);
+            markersById.set(it.id, m);
             pts.push([it.lat, it.lon]);
           }
         }
-        if(pts.length){
+        if(pts.length && !suppressFitBounds){
           const b = L.latLngBounds(pts);
           setTimeout(() => { map.invalidateSize(); map.fitBounds(b.pad(0.2)); }, 0);
+        }
+        suppressFitBounds = false;
+      }
+      function highlightRow(id){
+        const rows = document.querySelectorAll('#rows tr');
+        rows.forEach(r => r.classList.toggle('row-active', r.dataset.id === String(id)));
+        const target = Array.from(rows).find(r => r.dataset.id === String(id));
+        if(target){ target.scrollIntoView({ block: 'nearest' }); }
+      }
+
+      async function geocodeAndCenter(q){
+        if(!q) return;
+        try{
+          setMapLoading(true); setBanner('');
+          const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&addressdetails=1&q=${encodeURIComponent(q + ', Texas')}`;
+          const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+          const data = await res.json();
+          if(Array.isArray(data) && data.length){
+            const { lat, lon } = data[0];
+            selectedCenter = L.latLng(parseFloat(lat), parseFloat(lon));
+            map.setView(selectedCenter, 12);
+            if(centerMarker){ map.removeLayer(centerMarker); }
+            centerMarker = L.marker(selectedCenter, { opacity: 0.7 }).addTo(map).bindPopup('Search center');
+            suppressFitBounds = true;
+            await runSearch();
+          } else {
+            setBanner('Could not find that address. Try a more specific query.');
+          }
+        } catch (e){
+          setBanner('Geocoding failed. Please try again.');
+        } finally {
+          setMapLoading(false);
         }
       }
 
       async function runSearch(){
         const form = document.getElementById('filters');
         const data = Object.fromEntries(new FormData(form).entries());
-        setStatus('Loading...');
+        setStatus('Loading...', true);
         const params = {
           county: data.county || undefined,
           depth_min: data.depth_min || undefined,
@@ -151,20 +265,54 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
           date_to: data.date_to || undefined,
           limit: 100,
         };
-        // If there is a map center and radius set, include them
+        const useRadius = document.getElementById('use_radius').checked;
         const r = Number(data.radius_m || 0);
-        if(!Number.isNaN(r) && r > 0){
-          const c = map.getCenter();
+        if(useRadius && !Number.isNaN(r) && r > 0){
+          const c = selectedCenter || map.getCenter();
           params.lat = c.lat;
           params.lon = c.lng;
           params.radius_m = r;
+          // Draw/update radius circle
+          if(radiusCircle){ map.removeLayer(radiusCircle); }
+          radiusCircle = L.circle([c.lat, c.lng], { radius: r, color: '#3b82f6', weight: 1, fillOpacity: 0.05 }).addTo(map);
+        } else {
+          if(radiusCircle){ map.removeLayer(radiusCircle); radiusCircle = null; }
         }
-        const items = await fetchResults(params);
+        let items = [];
+        try{
+          items = await fetchResults(params); setBanner('');
+        }catch(e){ console.error(e); setBanner(`Error loading results. ${e && e.message ? e.message : ''}`); items=[]; }
         // Support both array and {items: [...]} shapes
         const rows = Array.isArray(items) ? items : (items.items || []);
-        renderRows(rows);
-        renderMarkers(rows);
-        setStatus(rows.length ? `${rows.length} results` : 'No results');
+        allRows = rows.slice(); // base
+        // Sorting defaults
+        const cmp = (a,b,key)=>{
+          const va = (a[key] ?? ''), vb = (b[key] ?? '');
+          if(key==='depth_ft'){ const na=Number(va)||0, nb=Number(vb)||0; return na-nb; }
+          return String(va).localeCompare(String(vb));
+        };
+        allRows.sort((a,b)=>{ const c=cmp(a,b,'date_completed'); return -c; });
+        page = 1; renderPage();
+        renderMarkers(allRows);
+        if(useRadius && params.radius_m){
+          setStatus(rows.length ? `${rows.length} results within ${params.radius_m} m` : 'No results for this radius');
+        } else {
+          setStatus(rows.length ? `${rows.length} results` : 'No results');
+        }
+        // Persist filters to URL for share/refresh
+        const qs = new URLSearchParams();
+        if(params.county) qs.set('county', params.county);
+        if(params.depth_min) qs.set('depth_min', params.depth_min);
+        if(params.depth_max) qs.set('depth_max', params.depth_max);
+        if(params.date_from) qs.set('date_from', params.date_from);
+        if(params.date_to) qs.set('date_to', params.date_to);
+        if(params.lat && params.lon && params.radius_m){
+          qs.set('lat', String(params.lat));
+          qs.set('lon', String(params.lon));
+          qs.set('radius_m', String(params.radius_m));
+        }
+        const url = `${location.pathname}?${qs.toString()}`;
+        history.replaceState(null, '', url);
       }
       function applyQueryDefaults(){
         const params = new URLSearchParams(window.location.search);
@@ -172,20 +320,79 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
         if(county){ document.querySelector('input[name="county"]').value = county; }
         const df = params.get('date_from'); if(df) document.querySelector('input[name="date_from"]').value = df;
         const dt = params.get('date_to'); if(dt) document.querySelector('input[name="date_to"]').value = dt;
+        const lat = params.get('lat'); const lon = params.get('lon'); const rad = params.get('radius_m');
+        if(lat && lon && rad){
+          document.getElementById('use_radius').checked = true;
+          document.querySelector('input[name="radius_m"]').value = rad;
+          selectedCenter = L.latLng(parseFloat(lat), parseFloat(lon));
+          map.setView(selectedCenter, 12);
+        }
       }
       document.getElementById('filters').addEventListener('submit', (e) => { e.preventDefault(); runSearch().catch(() => setStatus('Error loading')); });
+      // Auto-run on filter changes with debounce
+      let t;
+      const deb = (fn, ms=300) => (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+      ['county','depth_min','depth_max','date_from','date_to','radius_m'].forEach(n => {
+        const el = document.querySelector(`[name="${n}"]`);
+        if(el){ el.addEventListener('input', deb(() => runSearch().catch(() => setStatus('Error loading')))); }
+      });
       document.getElementById('reset').addEventListener('click', () => { (document.getElementById('filters')).reset(); setStatus('Ready'); renderRows([]); clearMarkers(); });
+      // Sorting interactions
+      document.querySelectorAll('th.sortable').forEach(th => {
+        th.addEventListener('click', () => {
+          const key = th.getAttribute('data-key'); if(!key) return;
+          if(sortKey===key){ sortDir = sortDir==='asc'?'desc':'asc'; } else { sortKey=key; sortDir='asc'; }
+          const toNum = v => (v==null || v==='') ? null : Number(v);
+          allRows.sort((a,b)=>{
+            let va=a[key], vb=b[key];
+            if(key==='depth_ft'){ va=toNum(va)||0; vb=toNum(vb)||0; }
+            const c = String(va).localeCompare(String(vb), undefined, { numeric: true });
+            return sortDir==='asc'? c : -c;
+          });
+          page=1; renderPage();
+        });
+      });
+      // Pagination
+      const prev = document.getElementById('prev'), next = document.getElementById('next');
+      prev && prev.addEventListener('click', () => { if(page>1){ page--; renderPage(); }});
+      next && next.addEventListener('click', () => { const pages = Math.max(1, Math.ceil(allRows.length/pageSize)); if(page<pages){ page++; renderPage(); }});
+      // Geocode button and Enter key in address field
+      const addrInput = document.querySelector('input[name="addr"]');
+      document.getElementById('geocode').addEventListener('click', async () => {
+        const q = addrInput && 'value' in addrInput ? addrInput.value.trim() : '';
+        await geocodeAndCenter(q);
+      });
+      addrInput && addrInput.addEventListener('keydown', async (e) => {
+        if(e.key === 'Enter') { e.preventDefault(); const q = addrInput.value.trim(); await geocodeAndCenter(q); }
+      });
       applyQueryDefaults();
       runSearch().catch(() => setStatus('Error loading'));
-      map.on('click', (e) => { map.setView(e.latlng, 12); runSearch(); });
+      map.on('click', (e) => {
+        selectedCenter = e.latlng;
+        map.setView(e.latlng, Math.max(map.getZoom(), 12));
+        if(document.getElementById('use_radius').checked){ suppressFitBounds = true; runSearch(); }
+      });
+      document.getElementById('use_radius').addEventListener('change', () => { runSearch(); });
       // Fetch as-of for footer
       (async () => {
         try{
           const res = await fetch(new URL('/v1/meta', API));
           const j = await res.json();
-          if(j && j.as_of){ document.querySelector('footer').innerHTML = `SDR as-of ${j.as_of}. Contains data from TWDB SDR.`; }
+          if(j && j.as_of){ document.querySelector('footer').innerHTML = `SDR as-of ${j.as_of}. Contains data from TWDB SDR.`; const asof=document.getElementById('asof'); if(asof) asof.textContent=`As-of ${j.as_of}`; }
         }catch{}
       })();
+      // Theme toggle
+      const themeBtn = document.getElementById('theme');
+      if(themeBtn){
+        const saved = localStorage.getItem('theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', saved);
+        themeBtn.addEventListener('click', () => {
+          const cur = document.documentElement.getAttribute('data-theme') || 'dark';
+          const next = cur==='dark' ? 'light' : 'dark';
+          document.documentElement.setAttribute('data-theme', next);
+          localStorage.setItem('theme', next);
+        });
+      }
     </script>
   </body>
   </html>
