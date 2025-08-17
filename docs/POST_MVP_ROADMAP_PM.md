@@ -9,12 +9,12 @@
 - **Why it matters**: Broader coverage and a clear differentiator vs incumbents.
 - **What we’ll do**:
   - Normalize GWDB wells to a shared shape: `id, owner, county, lat, lon, depth_ft, date_completed, source, source_id`.
-  - Views: `app.wells_sdr`, `app.wells_gwdb`; unify responses based on `source` param.
-  - UI: Data Source toggle updates map/list/export.
-  - Exports: include `source`, `source_id`.
+  - Views: `app.wells_sdr`, `app.wells_gwdb`; union `app.wells`; API queries select by `source` param.
+  - UI: Data Source toggle updates map/list/export; Results limit selector (100, 250, 500, 1000, 2000).
+  - Exports: include `source`, `source_id` and surface source in PDF table.
 - **Acceptance criteria**:
   - Switching source refreshes pins/list in < 1–2 s; filters behave identically.
-  - CSV/PDF reflect active source; fields populated.
+  - CSV/PDF reflect active source; fields populated; source indicator present.
 - **Risks & mitigations**:
   - GWDB variance → minimal core mapping + docs; surface `source_id`.
 

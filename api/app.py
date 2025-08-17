@@ -62,7 +62,7 @@ class ReportFilters(BaseModel):
     lat: Optional[float] = None
     lon: Optional[float] = None
     radius_m: Optional[int] = None
-    limit: Optional[int] = 100
+    limit: Optional[int] = None
     source: Optional[str] = None  # 'sdr' | 'gwdb' | 'all'
 
 app = FastAPI(title="TX Well Lookup API", version="0.1.0")
@@ -355,7 +355,7 @@ def search(
     lat: Optional[float] = Query(default=None),
     lon: Optional[float] = Query(default=None),
     radius_m: Optional[int] = Query(default=None),
-    limit: int = Query(default=50, ge=1, le=500),
+    limit: Optional[int] = Query(default=None),
     source: Optional[str] = Query(default="sdr", pattern="^(sdr|gwdb|all)$"),
 ):
     if pool is None and not DATABASE_URL:
@@ -380,25 +380,26 @@ def search(
         params.append(date_to)
     if date_from or date_to:
         clauses.append("date_completed IS NOT NULL")
-    # Simple radius filter using a bounding box on lat/lon (non-PostGIS)
+    # Radius filter using haversine distance approximation to reduce false-positives outside circle
     if lat is not None and lon is not None and radius_m is not None and radius_m > 0:
-        delta_lat = radius_m / 111_320.0
-        # Avoid division by zero at poles
-        cos_lat = max(0.001, math.cos(math.radians(lat)))
-        delta_lon = radius_m / (111_320.0 * cos_lat)
-        min_lat, max_lat = lat - delta_lat, lat + delta_lat
-        min_lon, max_lon = lon - delta_lon, lon + delta_lon
-        clauses.append("lat BETWEEN %s AND %s")
-        params.extend([min_lat, max_lat])
-        clauses.append("lon BETWEEN %s AND %s")
-        params.extend([min_lon, max_lon])
+        lat_r = math.radians(lat)
+        lon_r = math.radians(lon)
+        # Use 6371000m Earth radius; implement distance <= radius via SQL expression
+        clauses.append(
+            "(6371000 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(%s - lat)/2),2) + COS(RADIANS(%s)) * COS(RADIANS(lat)) * POWER(SIN(RADIANS(%s - lon)/2),2)))) <= %s"
+        )
+        params.extend([lat, lat, lon, radius_m])
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     table = _resolve_wells_table(source)
-    sql = (
+    base_sql = (
         "SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD'), source, source_id "
-        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
+        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC"
     )
-    params.append(limit)
+    if limit is not None:
+        sql = base_sql + " LIMIT %s"
+        params.append(limit)
+    else:
+        sql = base_sql
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
@@ -422,7 +423,7 @@ def export_search_csv(
     lat = filters.lat if filters else None
     lon = filters.lon if filters else None
     radius_m = filters.radius_m if filters else None
-    limit = (filters.limit if (filters and filters.limit) else 1000)
+    limit = (filters.limit if (filters and filters.limit) is not None else None)
     source = (filters.source if filters and filters.source else "sdr")
     """Export current filtered results as CSV. Columns match list view and include lat/lon."""
     if pool is None and not DATABASE_URL:
@@ -457,22 +458,21 @@ def export_search_csv(
     if date_from or date_to:
         clauses.append("date_completed IS NOT NULL")
     if lat is not None and lon is not None and radius_m is not None and radius_m > 0:
-        delta_lat = radius_m / 111_320.0
-        cos_lat = max(0.001, math.cos(math.radians(lat)))
-        delta_lon = radius_m / (111_320.0 * cos_lat)
-        min_lat, max_lat = lat - delta_lat, lat + delta_lat
-        min_lon, max_lon = lon - delta_lon, lon + delta_lon
-        clauses.append("lat BETWEEN %s AND %s")
-        params.extend([min_lat, max_lat])
-        clauses.append("lon BETWEEN %s AND %s")
-        params.extend([min_lon, max_lon])
+        clauses.append(
+            "(6371000 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(%s - lat)/2),2) + COS(RADIANS(%s)) * COS(RADIANS(lat)) * POWER(SIN(RADIANS(%s - lon)/2),2)))) <= %s"
+        )
+        params.extend([lat, lat, lon, radius_m])
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     table = _resolve_wells_table(source)
-    sql = (
+    base_sql = (
         "SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD'), source, source_id "
-        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
+        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC"
     )
-    params.append(limit)
+    if limit is not None:
+        sql = base_sql + " LIMIT %s"
+        params.append(limit)
+    else:
+        sql = base_sql
 
     conn = _get_conn()
     try:
@@ -514,7 +514,7 @@ def export_pdf(
     lat = filters.lat if filters else None
     lon = filters.lon if filters else None
     radius_m = filters.radius_m if filters else None
-    limit = (filters.limit if (filters and filters.limit) else 100)
+    limit = (filters.limit if (filters and filters.limit) is not None else None)
     source = (filters.source if (filters and filters.source) else "sdr")
     """Simple PDF export summarizing current result set (first page list)."""
     # Reuse the same filter building
@@ -533,20 +533,20 @@ def export_pdf(
     if date_from or date_to:
         clauses.append("date_completed IS NOT NULL")
     if lat is not None and lon is not None and radius_m is not None and radius_m > 0:
-        delta_lat = radius_m / 111_320.0
-        cos_lat = max(0.001, math.cos(math.radians(lat)))
-        delta_lon = radius_m / (111_320.0 * cos_lat)
-        min_lat, max_lat = lat - delta_lat, lat + delta_lat
-        min_lon, max_lon = lon - delta_lon, lon + delta_lon
-        clauses.append("lat BETWEEN %s AND %s"); params.extend([min_lat, max_lat])
-        clauses.append("lon BETWEEN %s AND %s"); params.extend([min_lon, max_lon])
+        clauses.append(
+            "(6371000 * 2 * ASIN(SQRT(POWER(SIN(RADIANS(%s - lat)/2),2) + COS(RADIANS(%s)) * COS(RADIANS(lat)) * POWER(SIN(RADIANS(%s - lon)/2),2)))) <= %s"
+        ); params.extend([lat, lat, lon, radius_m])
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     table = _resolve_wells_table(source)
-    sql = (
+    base_sql = (
         "SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD'), source, source_id "
-        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
+        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC"
     )
-    params.append(limit)
+    if limit is not None:
+        sql = base_sql + " LIMIT %s"
+        params.append(limit)
+    else:
+        sql = base_sql
 
     rows: List[tuple] = []
     as_of: Optional[str] = None
@@ -674,12 +674,12 @@ def export_pdf(
         except Exception:
             pass
 
-        data = [["Well ID", "Owner", "County", "Depth (ft)", "Completed", "Source", "Source ID"]]
+        data = [["Well ID", "Source", "Owner", "County", "Depth (ft)", "Completed", "Source ID"]]
         for r in rows:
-            data.append([r[0], r[1] or "", r[2] or "", r[5] or "", r[6] or "", r[7] or "", r[8] or ""])
+            data.append([r[0], r[7] or "", r[1] or "", r[2] or "", r[5] or "", r[6] or "", r[8] or ""])
 
         # Column widths tuned for letter page
-        col_widths = [1.2*inch, 2.6*inch, 1.2*inch, 1.0*inch, 1.1*inch, 0.9*inch, 1.6*inch]
+        col_widths = [1.2*inch, 0.9*inch, 2.4*inch, 1.2*inch, 1.0*inch, 1.1*inch, 1.6*inch]
         tbl = Table(data, colWidths=col_widths, repeatRows=1)
         tbl.setStyle(TableStyle([
             ('BACKGROUND', (0,0), (-1,0), colors.HexColor('#1f2937')),

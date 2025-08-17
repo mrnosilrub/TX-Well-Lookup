@@ -8,7 +8,10 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
     <title>TX Well Lookup</title>
     <meta name="x-api" content={PUBLIC_API_URL} />
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+    <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js" defer></script>
     
     <style>
       /* ALIGNMENT FIX v4 - Global rules */
@@ -36,17 +39,8 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
         .results{ --_sbw: 0px; }
       }
       label{display:block;font-size:12px;color:var(--muted);margin-top:10px}
-      input, select{width:100%;padding:10px;margin-top:6px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text)}
-      /* Modern select styling */
-      select#source{
-        appearance:none; -webkit-appearance:none; -moz-appearance:none;
-        background-color:var(--panel);
-        padding:10px 36px 10px 12px;
-        background-image:url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 20 20" fill="none"><path d="M5.25 7.5L10 12.25L14.75 7.5" stroke="%2394a3b8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>');
-        background-repeat:no-repeat; background-size:16px; background-position:right 12px center;
-      }
-      select#source:focus{outline:2px solid var(--accent); outline-offset:2px}
-      [data-theme='light'] input, [data-theme='light'] select{color:#000 !important}
+      input{width:100%;padding:10px;margin-top:6px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text)}
+      [data-theme='light'] input{color:#000 !important}
       input:focus, button:focus{outline:2px solid var(--accent);outline-offset:2px}
       .btns{display:flex;gap:10px}
       button{margin-top:14px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--text);cursor:pointer}
@@ -54,6 +48,19 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       #theme{margin-top:0;padding:8px 10px;border-radius:8px;line-height:1;display:inline-flex;align-items:center;gap:6px;background:var(--panel);color:var(--text);border:1px solid var(--line)}
       #exportCsv, #exportPdf{margin-top:0;padding:8px 10px;border-radius:8px;line-height:1;display:inline-flex;align-items:center;background:var(--panel);color:var(--text);border:1px solid var(--line)}
       #exportCsv:hover, #exportPdf:hover{border-color:var(--accent);background:color-mix(in srgb, var(--panel) 90%, var(--accent))}
+      /* Custom select */
+      .select-wrap{position:relative}
+      .select-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+      .select-btn{width:100%;padding:10px 36px 10px 12px;margin-top:6px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text);display:flex;align-items:center;justify-content:space-between}
+      .select-caret{display:inline-block;width:16px;height:16px;flex:0 0 16px}
+      .select-list{position:absolute;left:0;top:calc(100% + 6px);width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:6px;z-index:20;box-shadow:0 10px 25px rgba(0,0,0,0.25);display:none}
+      .select-wrap.open .select-list{display:block}
+      .select-list li{list-style:none;padding:8px 10px;border-radius:8px;cursor:pointer}
+      .select-list li:hover{background:color-mix(in srgb, var(--panel) 90%, var(--accent))}
+      /* Map overlay button */
+      #searchArea{position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:6;display:none}
+      #searchArea.show{display:block}
+      #searchArea button{padding:8px 12px;border-radius:8px;border:1px solid var(--line);background:var(--panel);color:var(--text);box-shadow:0 6px 20px rgba(0,0,0,0.25)}
       table{width:100%;border-collapse:collapse;table-layout:fixed;font-size:14px;color:var(--text)}
       thead{position:sticky;top:0;background:var(--panel);z-index:1;padding-right:var(--sbw, 0px)}
       th{padding:12px var(--cell-pad);border-bottom:1px solid var(--line);vertical-align:middle;text-align:left;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:relative}
@@ -99,9 +106,33 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
         .results{overflow:auto}
       }
       /* Marker highlight */
-      .leaflet-marker-icon.selected{transform:scale(1.12);filter:drop-shadow(0 0 8px rgba(56,189,248,0.7));}
+      :global(.leaflet-marker-icon.selected){transform:scale(1.12);filter:drop-shadow(0 0 8px rgba(56,189,248,0.7));}
       [data-theme='light'] .date-cell{color:#000 !important}
       [data-theme='dark'] .date-cell{color:var(--text)}
+
+      /* Modern well marker (DivIcon) */
+      :global(.well-wrap){width:22px;height:22px;}
+      :global(.well){width:22px;height:22px;border-radius:50%;display:grid;place-items:center;box-shadow:0 2px 6px rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.25)}
+      :global(.well--sdr){background:linear-gradient(135deg,#3b82f6,#1d4ed8)}
+      :global(.well--gwdb){background:linear-gradient(135deg,#10b981,#059669)}
+      :global(.well__dot){width:6px;height:6px;border-radius:50%;background:#fff;opacity:.95}
+      :global(.leaflet-marker-icon:hover) :global(.well){transform:scale(1.06)}
+      :global(.leaflet-marker-icon.selected) :global(.well){outline:2px solid rgba(56,189,248,0.9);outline-offset:2px}
+
+      /* Modern cluster icon */
+      :global(.cluster-wrap){}
+      :global(.cluster){--size:44px;width:var(--size);height:var(--size);border-radius:50%;display:grid;place-items:center;
+        background:radial-gradient(65% 65% at 30% 30%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.1) 100%),
+                    linear-gradient(135deg,#6366f1,#06b6d4);
+        color:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.25)}
+      :global(.cluster.sm){--size:36px}
+      :global(.cluster.md){--size:44px}
+      :global(.cluster.lg){--size:52px}
+      :global(.cluster.xl){--size:60px}
+      :global(.cluster__count){font-weight:700;letter-spacing:.2px;text-shadow:0 1px 2px rgba(0,0,0,0.25)}
+      /* Neutralize default marker-cluster bubble so custom HTML shows cleanly */
+      :global(.marker-cluster){background:transparent !important;border:none !important;}
+      :global(.marker-cluster) div{background:transparent !important;border:none !important;box-shadow:none !important}
       
     </style>
   </head>
@@ -120,13 +151,24 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
     <div class="app">
       <div class="sidebar">
         <form id="filters">
-          <label>Data source
-            <select name="source" id="source">
-              <option value="sdr" selected>SDR</option>
-              <option value="gwdb">GWDB</option>
-              <option value="all">All</option>
-            </select>
-          </label>
+          <div class="select-row">
+            <div>
+              <label>Data source</label>
+              <div class="select-wrap" id="dsWrap">
+                <button type="button" class="select-btn" id="sourceBtn" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="sourceLabel">SDR</span>
+                  <span class="select-caret"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5.25 7.5L10 12.25L14.75 7.5" stroke="#94a3b8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                </button>
+                <ul class="select-list" id="sourceList" role="listbox">
+                  <li role="option" data-value="sdr">SDR</li>
+                  <li role="option" data-value="gwdb">GWDB</li>
+                  <li role="option" data-value="all">All</li>
+                </ul>
+                <input type="hidden" id="source" name="source" value="sdr" />
+              </div>
+            </div>
+            
+          </div>
           <label>County
             <input name="county" placeholder="e.g., Galveston" />
           </label>
@@ -175,7 +217,10 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
         </form>
       </div>
       <div class="content">
-        <div id="map" class="map"><div id="mapOverlay"><span class="spinner"></span></div></div>
+        <div id="map" class="map">
+          <div id="mapOverlay"><span class="spinner"></span></div>
+          <div id="searchArea"><button type="button" id="searchAreaBtn">Search this area</button></div>
+        </div>
         <div class="results">
           <div id="banner" class="banner" role="alert"></div>
           <div id="status" aria-live="polite">Ready</div>
@@ -205,12 +250,39 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       </div>
     </div>
     <script type="module">
-      const L = window.L;
-      // Read API base URL from meta tag injected by Astro
       const API = (document.querySelector('meta[name="x-api"]')?.getAttribute('content')) || 'http://127.0.0.1:8000';
       console.log('API URL:', API);
-      const map = L.map('map').setView([31.0, -99.0], 6);
+      window.addEventListener('load', () => {
+        // Theme setup
+        const root = document.documentElement;
+        const savedTheme = localStorage.getItem('theme');
+        const prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+        root.setAttribute('data-theme', savedTheme || (prefersDark ? 'dark' : 'light'));
+        const themeBtn = document.getElementById('theme');
+        if (themeBtn) {
+          themeBtn.addEventListener('click', () => {
+            const cur = root.getAttribute('data-theme') || 'dark';
+            const next = cur === 'dark' ? 'light' : 'dark';
+            root.setAttribute('data-theme', next);
+            localStorage.setItem('theme', next);
+          });
+        }
+
+        // Ensure Leaflet scripts are available
+        const L = window.L;
+        if (!L || typeof L.map !== 'function') {
+          console.error('Leaflet not loaded yet');
+          return;
+        }
+        const map = L.map('map').setView([31.0, -99.0], 6);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM' }).addTo(map);
+      const clusterGroup = L.markerClusterGroup({ disableClusteringAtZoom: 13, spiderfyOnMaxZoom: true, showCoverageOnHover: false, iconCreateFunction: (cluster) => {
+        const count = cluster.getChildCount();
+        const sizeClass = count < 10 ? 'sm' : count < 100 ? 'md' : count < 1000 ? 'lg' : 'xl';
+        const html = `<div class="cluster ${sizeClass}"><span class="cluster__count">${count}</span></div>`;
+        return L.divIcon({ html, className: 'cluster-wrap', iconSize: [60,60], iconAnchor: [30,30] });
+      }});
+      map.addLayer(clusterGroup);
       let markers = [];
       const markersById = new Map();
       let centerMarker = null;
@@ -222,7 +294,17 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       let page = 1;
       let sortKey = 'date_completed';
       let sortDir = 'desc';
-      const sourceSelect = document.getElementById('source');
+      let currentBbox = null; // {min_lat, max_lat, min_lon, max_lon}
+      let areaDirty = false;
+      const sourceHidden = document.getElementById('source');
+      const dsWrap = document.getElementById('dsWrap');
+      const sourceBtn = document.getElementById('sourceBtn');
+      const sourceLabel = document.getElementById('sourceLabel');
+      const sourceList = document.getElementById('sourceList');
+      
+      const searchAreaBtn = document.getElementById('searchAreaBtn');
+      const searchAreaDiv = document.getElementById('searchArea');
+
       function updateSortIndicators(){
         document.querySelectorAll('th.sortable').forEach(th => {
           const key = th.getAttribute('data-key');
@@ -238,12 +320,11 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
         renderRows(slice);
         const pages = Math.max(1, Math.ceil(allRows.length / pageSize));
         const info = document.getElementById('pageinfo');
-        if(info){ info.textContent = `Page ${page} of ${pages} (${allRows.length} total)`; }
+        if(info){ info.textContent = `Page ${page} of ${pages} (${allRows.length} total in view)`; }
         const prevBtn = document.getElementById('prev');
         const nextBtn = document.getElementById('next');
         if(prevBtn) prevBtn.disabled = page <= 1;
         if(nextBtn) nextBtn.disabled = page >= pages;
-        // ensure header and cells stay aligned on resize
         requestAnimationFrame(() => {
           const table = document.querySelector('table');
           if(table && table.offsetWidth){ table.style.tableLayout = 'fixed'; }
@@ -266,7 +347,8 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       }
 
       function clearMarkers(){
-        markers.forEach(m => { try{ map.removeLayer(m); }catch{} });
+        try{ clusterGroup.clearLayers(); }catch{}
+        markers.forEach(m => { try{ /* markers are managed by clusterGroup now */ }catch{} });
         markers = []; markersById.clear();
       }
       function setBanner(text){ const b = document.getElementById('banner'); if(text){ b.textContent = text; b.classList.add('show'); } else { b.classList.remove('show'); b.textContent=''; } requestAnimationFrame(()=>map.invalidateSize()); }
@@ -302,19 +384,10 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
                           `<td class="date-cell"><span class="cell">${it.date_completed||''}</span></td>`;
           tr.tabIndex = 0;
           tr.style.cursor = 'pointer';
-          tr.addEventListener('click', () => {
-            console.log('Row clicked:', it.id);
-            selectById(it.id);
-          });
+          tr.addEventListener('click', () => { selectById(it.id); });
           tr.addEventListener('keydown', (e) => { if(e.key==='Enter' || e.key===' '){ e.preventDefault(); selectById(it.id); }});
-          tr.addEventListener('mouseenter', () => {
-            setMarkerSelected(it.id, true);
-            tr.style.backgroundColor = 'color-mix(in srgb, var(--accent) 15%, var(--panel))';
-          });
-          tr.addEventListener('mouseleave', () => {
-            if(selectedId !== it.id) setMarkerSelected(it.id, false);
-            if(selectedId !== it.id) tr.style.backgroundColor = '';
-          });
+          tr.addEventListener('mouseenter', () => { setMarkerSelected(it.id, true); tr.style.backgroundColor = 'color-mix(in srgb, var(--accent) 15%, var(--panel))'; });
+          tr.addEventListener('mouseleave', () => { if(selectedId !== it.id) setMarkerSelected(it.id, false); if(selectedId !== it.id) tr.style.backgroundColor = ''; });
           tr.dataset.id = it.id;
           tbody.appendChild(tr);
         }
@@ -327,12 +400,17 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       function renderMarkers(items){
         clearMarkers();
         const pts = [];
+        const makeWellIcon = (source) => {
+          const variant = (source || 'sdr').toLowerCase() === 'gwdb' ? 'gwdb' : 'sdr';
+          const html = `<div class="well-wrap"><div class="well well--${variant}"><span class="well__dot"></span></div></div>`;
+          return L.divIcon({ html, className: 'well-icon', iconSize: [22,22], iconAnchor: [11,11], popupAnchor: [0,-12] });
+        };
         for(const it of items){
           if(it.lat && it.lon){
             const html = `<strong>${it.id}</strong><br/>${it.owner||''}<br/>${it.county||''}<br/>Depth: ${it.depth_ft??''} ft<br/>Completed: ${it.date_completed||''}`;
-            const m = L.marker([it.lat, it.lon]).bindPopup(html);
+            const m = L.marker([it.lat, it.lon], { icon: makeWellIcon(it.source) }).bindPopup(html);
             m.on('click', () => selectById(it.id, false));
-            m.addTo(map);
+            clusterGroup.addLayer(m);
             markers.push(m);
             markersById.set(it.id, m);
             pts.push([it.lat, it.lon]);
@@ -349,18 +427,12 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
         rows.forEach(r => {
           const isActive = r.dataset.id === String(id);
           r.classList.toggle('row-active', isActive);
-          if(isActive){
-            r.style.backgroundColor = 'color-mix(in srgb, var(--panel) 85%, var(--accent) 15%)';
-          } else if(selectedId !== r.dataset.id) {
-            r.style.backgroundColor = '';
-          }
+          if(isActive){ r.style.backgroundColor = 'color-mix(in srgb, var(--panel) 85%, var(--accent) 15%)'; } else if(selectedId !== r.dataset.id) { r.style.backgroundColor = ''; }
         });
         const target = Array.from(rows).find(r => r.dataset.id === String(id));
         if(target){ target.scrollIntoView({ block: 'nearest' }); }
-        // keep header alignment consistent by forcing layout
         const table = document.querySelector('table');
         if(table){ table.style.tableLayout='fixed'; }
-        // ensure marker highlight reflects row selection
         markersById.forEach((_m, mid) => { const el = markersById.get(mid)?._icon || markersById.get(mid)?.getElement?.(); if(el){ el.classList.toggle('selected', String(mid)===String(id)); }});
       }
 
@@ -378,15 +450,13 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
             if(centerMarker){ map.removeLayer(centerMarker); }
             centerMarker = L.marker(selectedCenter, { opacity: 0.7 }).addTo(map).bindPopup('Search center');
             suppressFitBounds = true;
+            currentBbox = null; // prefer radius if user is going to use it
             await runSearch();
           } else {
             setBanner('Could not find that address. Try a more specific query.');
           }
-        } catch (e){
-          setBanner('Geocoding failed. Please try again.');
-        } finally {
-          setMapLoading(false);
-        }
+        } catch (e){ setBanner('Geocoding failed. Please try again.'); }
+        finally { setMapLoading(false); }
       }
 
       function gatherFilters(){
@@ -399,7 +469,7 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
           depth_max: data.depth_max || undefined,
           date_from: data.date_from || undefined,
           date_to: data.date_to || undefined,
-          limit: 100,
+          limit: undefined,
         };
         const useRadius = document.getElementById('use_radius').checked;
         const r = Number(data.radius_m || 0);
@@ -408,6 +478,11 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
           params.lat = c.lat;
           params.lon = c.lng;
           params.radius_m = r;
+        } else if(currentBbox){
+          params.min_lat = currentBbox.min_lat;
+          params.max_lat = currentBbox.max_lat;
+          params.min_lon = currentBbox.min_lon;
+          params.max_lon = currentBbox.max_lon;
         }
         return params;
       }
@@ -417,178 +492,90 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
         const params = gatherFilters();
         const useRadius = document.getElementById('use_radius').checked;
         if(useRadius && params.radius_m){
-          // Draw/update radius circle
           if(radiusCircle){ map.removeLayer(radiusCircle); }
           const c = selectedCenter || map.getCenter();
           radiusCircle = L.circle([c.lat, c.lng], { radius: params.radius_m, color: '#3b82f6', weight: 1, fillOpacity: 0.05 }).addTo(map);
         } else {
           if(radiusCircle){ map.removeLayer(radiusCircle); radiusCircle = null; }
         }
-        let items = [];
+        let payload = null;
         try{
-          items = await fetchResults(params); setBanner('');
-        }catch(e){ console.error(e); setBanner(`Error loading results. ${e && e.message ? e.message : ''}`); items=[]; }
-        // Support both array and {items: [...]} shapes
-        const rows = Array.isArray(items) ? items : (items.items || []);
-        allRows = rows.slice(); // base
-        // Sorting defaults
-        const cmp = (a,b,key)=>{
-          const va = (a[key] ?? ''), vb = (b[key] ?? '');
-          if(key==='depth_ft'){ const na=Number(va)||0, nb=Number(vb)||0; return na-nb; }
-          return String(va).localeCompare(String(vb));
-        };
+          payload = await fetchResults(params); setBanner('');
+        }catch(e){ console.error(e); setBanner(`Error loading results. ${e && e.message ? e.message : ''}`); payload=null; }
+        const rows = Array.isArray(payload) ? payload : (payload?.items || []);
+        const total = Array.isArray(payload) ? rows.length : (payload?.total ?? rows.length);
+        allRows = rows.slice();
+        const cmp = (a,b,key)=>{ const va=(a[key] ?? ''), vb=(b[key] ?? ''); if(key==='depth_ft'){ const na=Number(va)||0, nb=Number(vb)||0; return na-nb; } return String(va).localeCompare(String(vb)); };
         sortKey = 'date_completed'; sortDir = 'desc';
         allRows.sort((a,b)=>{ const c=cmp(a,b,sortKey); return sortDir==='asc'? c : -c; });
         page = 1; updateSortIndicators(); renderPage();
         renderMarkers(allRows);
-        if(useRadius && params.radius_m){
-          setStatus(rows.length ? `${rows.length} results within ${params.radius_m} m` : 'No results for this radius');
-        } else {
-          setStatus(rows.length ? `${rows.length} results` : 'No results');
-        }
-        // Persist filters to URL for share/refresh
+        if(useRadius && params.radius_m){ setStatus(rows.length ? `Showing ${rows.length} of ${total} within ${params.radius_m} m` : 'No results for this radius'); }
+        else if(currentBbox){ setStatus(rows.length ? `Showing ${rows.length} of ${total} in this area` : 'No results in this area'); }
+        else { setStatus(rows.length ? `Showing ${rows.length} of ${total}` : 'No results'); }
+        // Persist filters
         const qs = new URLSearchParams();
         Object.entries(params).forEach(([k,v]) => { if(v!=null && v!=='') qs.set(k, String(v)); });
         const url = `${location.pathname}?${qs.toString()}`;
         history.replaceState(null, '', url);
-        // Update header as-of for selected source
         await updateMeta();
+        // hide search area button after applying
+        areaDirty = false; searchAreaDiv.classList.remove('show');
       }
+
       function applyQueryDefaults(){
         const params = new URLSearchParams(window.location.search);
-        const source = params.get('source');
-        if(source && sourceSelect){ sourceSelect.value = source; }
-        const county = params.get('county');
-        if(county){ document.querySelector('input[name="county"]').value = county; }
+        const source = params.get('source'); if(source){ sourceHidden.value = source; sourceLabel.textContent = source.toUpperCase(); }
+        
+        const county = params.get('county'); if(county){ document.querySelector('input[name="county"]').value = county; }
         const df = params.get('date_from'); if(df) document.querySelector('input[name="date_from"]').value = df;
         const dt = params.get('date_to'); if(dt) document.querySelector('input[name="date_to"]').value = dt;
+        const min_lat = params.get('min_lat'); const max_lat = params.get('max_lat'); const min_lon = params.get('min_lon'); const max_lon = params.get('max_lon');
+        if(min_lat && max_lat && min_lon && max_lon){ currentBbox = { min_lat: parseFloat(min_lat), max_lat: parseFloat(max_lat), min_lon: parseFloat(min_lon), max_lon: parseFloat(max_lon) }; }
         const lat = params.get('lat'); const lon = params.get('lon'); const rad = params.get('radius_m');
-        if(lat && lon && rad){
-          document.getElementById('use_radius').checked = true;
-          document.querySelector('input[name="radius_m"]').value = rad;
-          selectedCenter = L.latLng(parseFloat(lat), parseFloat(lon));
-          map.setView(selectedCenter, 12);
-        }
+        if(lat && lon && rad){ document.getElementById('use_radius').checked = true; document.querySelector('input[name="radius_m"]').value = rad; selectedCenter = L.latLng(parseFloat(lat), parseFloat(lon)); map.setView(selectedCenter, 12); }
       }
-      document.getElementById('filters').addEventListener('submit', (e) => { e.preventDefault(); runSearch().catch(() => setStatus('Error loading')); });
-      // Auto-run on filter changes with debounce
-      let t;
-      const deb = (fn, ms=300) => (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
-      ;['source','county','depth_min','depth_max','date_from','date_to','radius_m'].forEach(n => {
-        const el = document.querySelector(`[name="${n}"]`);
-        if(el){ el.addEventListener('input', deb(() => runSearch().catch(() => setStatus('Error loading')))); }
-      });
-      document.getElementById('reset').addEventListener('click', () => { (document.getElementById('filters')).reset(); setStatus('Ready'); renderRows([]); clearMarkers(); });
-      // Sorting interactions
-      document.querySelectorAll('th.sortable').forEach(th => {
-        th.addEventListener('click', () => {
-          const key = th.getAttribute('data-key'); if(!key) return;
-          if(sortKey===key){ sortDir = sortDir==='asc'?'desc':'asc'; } else { sortKey=key; sortDir='asc'; }
-          const toNum = v => (v==null || v==='') ? null : Number(v);
-          allRows.sort((a,b)=>{
-            let va=a[key], vb=b[key];
-            if(key==='depth_ft'){ va=toNum(va)||0; vb=toNum(vb)||0; }
-            const c = String(va).localeCompare(String(vb), undefined, { numeric: true });
-            return sortDir==='asc'? c : -c;
-          });
-          page=1; updateSortIndicators(); renderPage();
-        });
-      });
+
+      document.getElementById('filters').addEventListener('submit', (e) => { e.preventDefault(); currentBbox=null; runSearch().catch(() => setStatus('Error loading')); });
+      let t; const deb = (fn, ms=300) => (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
+      ;['source','county','depth_min','depth_max','date_from','date_to','radius_m'].forEach(n => { const el = document.querySelector(`[name="${n}"]`); if(el){ el.addEventListener('input', deb(() => { if(n!=='radius_m'){ /* leave bbox intact */ } runSearch().catch(() => setStatus('Error loading')); })); } });
+      document.getElementById('reset').addEventListener('click', () => { (document.getElementById('filters')).reset(); sourceHidden.value='sdr'; sourceLabel.textContent='SDR'; limitHidden.value='100'; limitLabel.textContent='100'; currentBbox=null; setStatus('Ready'); renderRows([]); clearMarkers(); });
+
       // Pagination
       const prev = document.getElementById('prev'), next = document.getElementById('next');
-      prev && prev.addEventListener('click', () => { if(page>1){ page--; renderPage(); }});
-      next && next.addEventListener('click', () => { const pages = Math.max(1, Math.ceil(allRows.length/pageSize)); if(page<pages){ page++; renderPage(); }});
-      // Geocode button and Enter key in address field
+      if(prev){ prev.addEventListener('click', () => { if(page>1){ page--; renderPage(); }}); }
+      if(next){ next.addEventListener('click', () => { const pages = Math.max(1, Math.ceil(allRows.length/pageSize)); if(page<pages){ page++; renderPage(); }}); }
+
+      // Geocode button and Enter key
       const addrInput = document.querySelector('input[name="addr"]');
-      document.getElementById('geocode').addEventListener('click', async () => {
-        const q = addrInput && 'value' in addrInput ? addrInput.value.trim() : '';
-        await geocodeAndCenter(q);
-      });
-      addrInput && addrInput.addEventListener('keydown', async (e) => {
-        if(e.key === 'Enter') { e.preventDefault(); const q = addrInput.value.trim(); await geocodeAndCenter(q); }
-      });
+      document.getElementById('geocode').addEventListener('click', async () => { const q = addrInput && 'value' in addrInput ? addrInput.value.trim() : ''; await geocodeAndCenter(q); });
+      if(addrInput){ addrInput.addEventListener('keydown', async (e) => { if(e.key === 'Enter') { e.preventDefault(); const q = addrInput.value.trim(); await geocodeAndCenter(q); } }); }
 
       async function updateMeta(){
-        try{
-          const sel = (sourceSelect && sourceSelect.value) || 'sdr';
-          const url = new URL('/v1/meta', API);
-          url.searchParams.set('source', sel);
-          const res = await fetch(url);
-          const j = await res.json();
-          const asof=document.getElementById('asof');
-          if(asof && j && j.as_of){ asof.textContent=`As-of ${j.as_of}`; }
-        }catch(e){ /* noop */ }
+        try{ const sel = (sourceHidden && sourceHidden.value) || 'sdr'; const url = new URL('/v1/meta', API); url.searchParams.set('source', sel); const res = await fetch(url); const j = await res.json(); const asof=document.getElementById('asof'); if(asof && j && j.as_of){ asof.textContent=`As-of ${j.as_of}`; } }catch(e){ }
       }
+
+      // Custom dropdown behavior: source
+      sourceBtn.addEventListener('click', () => { const open = dsWrap.classList.toggle('open'); sourceBtn.setAttribute('aria-expanded', open ? 'true' : 'false'); });
+      sourceList.addEventListener('click', (e) => { const li = e.target.closest('li'); if(!li) return; const val = li.getAttribute('data-value') || 'sdr'; sourceHidden.value = val; sourceLabel.textContent = val.toUpperCase(); dsWrap.classList.remove('open'); sourceBtn.setAttribute('aria-expanded', 'false'); sourceHidden.dispatchEvent(new Event('input', { bubbles: true })); });
+      document.addEventListener('click', (e) => { if(!dsWrap.contains(e.target)){ dsWrap.classList.remove('open'); sourceBtn.setAttribute('aria-expanded', 'false'); } });
+
+      // Search this area flow
+      map.on('moveend', () => { const useRadius = document.getElementById('use_radius').checked; if(!useRadius){ areaDirty = true; searchAreaDiv.classList.add('show'); } });
+      searchAreaBtn.addEventListener('click', () => { const b = map.getBounds(); currentBbox = { min_lat: b.getSouth(), max_lat: b.getNorth(), min_lon: b.getWest(), max_lon: b.getEast() }; runSearch().catch(() => setStatus('Error loading')); });
 
       applyQueryDefaults();
       runSearch().catch(() => setStatus('Error loading'));
-      map.on('click', (e) => {
-        selectedCenter = e.latlng;
-        map.setView(e.latlng, Math.max(map.getZoom(), 12));
-        if(document.getElementById('use_radius').checked){ suppressFitBounds = true; runSearch(); }
+      map.on('click', (e) => { selectedCenter = e.latlng; map.setView(e.latlng, Math.max(map.getZoom(), 12)); if(document.getElementById('use_radius').checked){ suppressFitBounds = true; runSearch(); } });
+      document.getElementById('use_radius').addEventListener('change', () => { currentBbox = null; runSearch(); });
+
+      const clusterToggle = document.getElementById('use_cluster'); if(clusterToggle){ clusterToggle.addEventListener('change', () => { renderMarkers(allRows); }); }
+
+      // Export CSV/PDF buttons remain unchanged
+      const exportBtn = document.getElementById('exportCsv'); if(exportBtn){ exportBtn.addEventListener('click', async () => { try{ exportBtn.disabled = true; const prev = exportBtn.textContent; exportBtn.textContent = 'Exporting…'; const body = gatherFilters(); const url = new URL('/v1/search.csv', API); const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), mode: 'cors' }); const blob = await res.blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); const ts = new Date().toISOString().replace(/[-:T]/g,'').slice(0,15); a.download = `tx_wells_${ts}.csv`; document.body.appendChild(a); a.click(); URL.revokeObjectURL(a.href); a.remove(); exportBtn.textContent = prev; exportBtn.disabled = false; }catch(e){ console.error('CSV export failed', e); setBanner('CSV export failed. Please try again.'); exportBtn.disabled = false; exportBtn.textContent = 'Export CSV'; } }); }
+      const exportPdfBtn = document.getElementById('exportPdf'); if(exportPdfBtn){ exportPdfBtn.addEventListener('click', async () => { try{ exportPdfBtn.disabled = true; const prev = exportPdfBtn.textContent; exportPdfBtn.textContent = 'Exporting…'; const body = gatherFilters(); const url = new URL('/v1/reports?format=pdf', API); const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), mode: 'cors' }); const blob = await res.blob(); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); const ts = new Date().toISOString().replace(/[-:T]/g,'').slice(0,15); a.download = `tx_wells_${ts}.pdf`; document.body.appendChild(a); a.click(); URL.revokeObjectURL(a.href); a.remove(); exportPdfBtn.textContent = prev; exportPdfBtn.disabled = false; }catch(e){ console.error('PDF export failed', e); setBanner('PDF export failed. Please try again.'); exportPdfBtn.disabled = false; exportPdfBtn.textContent = 'Export PDF'; } }); }
+
       });
-      document.getElementById('use_radius').addEventListener('change', () => { runSearch(); });
-      const clusterToggle = document.getElementById('use_cluster');
-      if(clusterToggle){ clusterToggle.addEventListener('change', () => { renderMarkers(allRows); }); }
-
-      // Export CSV (POST)
-      const exportBtn = document.getElementById('exportCsv');
-      if(exportBtn){
-        exportBtn.addEventListener('click', async () => {
-          try{
-            exportBtn.disabled = true; const prev = exportBtn.textContent; exportBtn.textContent = 'Exporting…';
-            const body = gatherFilters();
-            const url = new URL('/v1/search.csv', API);
-            const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), mode: 'cors' });
-            const blob = await res.blob();
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            const ts = new Date().toISOString().replace(/[-:T]/g,'').slice(0,15);
-            a.download = `tx_wells_${ts}.csv`;
-            document.body.appendChild(a);
-            a.click();
-            URL.revokeObjectURL(a.href);
-            a.remove();
-            exportBtn.textContent = prev; exportBtn.disabled = false;
-          }catch(e){ console.error('CSV export failed', e); setBanner('CSV export failed. Please try again.'); exportBtn.disabled = false; exportBtn.textContent = 'Export CSV'; }
-        });
-      }
-
-      // Export PDF (POST)
-      const exportPdfBtn = document.getElementById('exportPdf');
-      if(exportPdfBtn){
-        exportPdfBtn.addEventListener('click', async () => {
-          try{
-            exportPdfBtn.disabled = true; const prev = exportPdfBtn.textContent; exportPdfBtn.textContent = 'Exporting…';
-            const body = gatherFilters();
-            const url = new URL('/v1/reports?format=pdf', API);
-            const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), mode: 'cors' });
-            const blob = await res.blob();
-            const a = document.createElement('a');
-            a.href = URL.createObjectURL(blob);
-            const ts = new Date().toISOString().replace(/[-:T]/g,'').slice(0,15);
-            a.download = `tx_wells_${ts}.pdf`;
-            document.body.appendChild(a);
-            a.click();
-            URL.revokeObjectURL(a.href);
-            a.remove();
-            exportPdfBtn.textContent = prev; exportPdfBtn.disabled = false;
-          }catch(e){ console.error('PDF export failed', e); setBanner('PDF export failed. Please try again.'); exportPdfBtn.disabled = false; exportPdfBtn.textContent = 'Export PDF'; }
-        });
-      }
-
-      // Theme toggle
-      const themeBtn = document.getElementById('theme');
-      if(themeBtn){
-        const saved = localStorage.getItem('theme') || 'dark';
-        document.documentElement.setAttribute('data-theme', saved);
-        themeBtn.addEventListener('click', () => {
-          const cur = document.documentElement.getAttribute('data-theme') || 'dark';
-          const next = cur==='dark' ? 'light' : 'dark';
-          document.documentElement.setAttribute('data-theme', next);
-          localStorage.setItem('theme', next);
-        });
-      }
     </script>
   </body>
   </html>
