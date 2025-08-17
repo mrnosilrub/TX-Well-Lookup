@@ -35,6 +35,12 @@ from psycopg2.extensions import connection as PGConnection
 from psycopg2.extensions import cursor as PGCursor
 from psycopg2 import sql
 
+# Increase CSV field size limit to handle very large SDR fields
+try:
+    csv.field_size_limit(1_000_000_000)
+except OverflowError:
+    csv.field_size_limit(2_147_483_647)
+
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(description="Load SDR zip into ground_truth schema (1:1)")
