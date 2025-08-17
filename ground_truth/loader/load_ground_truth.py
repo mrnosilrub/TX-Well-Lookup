@@ -120,8 +120,9 @@ def _create_table(cur: PGCursor, schema: str, table_raw: str, headers_raw: List[
 
 def _copy_into(cur: PGCursor, zf: zipfile.ZipFile, member: str, schema: str, table_raw: str, columns: List[str]) -> int:
 	# Use COPY FROM STDIN; supply quoted column list to avoid header alignment surprises
+	# Default CSV quote is double-quote; omit explicit QUOTE clause to avoid Python quoting issues
 	copy_sql = sql.SQL(
-		"COPY {}.{} ({}) FROM STDIN WITH (FORMAT csv, DELIMITER '|', HEADER true, ENCODING 'LATIN1', QUOTE '"')"
+		"COPY {}.{} ({}) FROM STDIN WITH (FORMAT csv, DELIMITER '|', HEADER true, ENCODING 'LATIN1')"
 	).format(
 		_quote_ident(schema),
 		_quote_ident(table_raw),
