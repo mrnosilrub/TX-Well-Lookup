@@ -1,0 +1,104 @@
+name: GWDB Ground Truth Load
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Which environment's secrets to use (dev|staging|prod)
+        required: false
+        default: prod
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      delimiter:
+        description: Field delimiter in GWDB files (e.g., '|' or ',')
+        required: false
+        default: "|"
+      encoding:
+        description: Text encoding in GWDB files (e.g., 'latin-1' or 'utf-8')
+        required: false
+        default: latin-1
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gwdb-ground-truth-${{ github.event_name == 'workflow_dispatch' && inputs.env || 'dev' }}
+  cancel-in-progress: false
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event_name == 'workflow_dispatch' && inputs.env || 'dev' }}
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GWDB_ZIP_URL: ${{ secrets.GWDB_ZIP_URL }}
+      RAW_GWDB_BUCKET: ${{ vars.RAW_GWDB_BUCKET }}
+      RAW_GWDB_PREFIX: ${{ vars.RAW_GWDB_PREFIX }}
+      STORAGE_ACCESS_KEY_ID: ${{ secrets.STORAGE_ACCESS_KEY_ID }}
+      STORAGE_SECRET_ACCESS_KEY: ${{ secrets.STORAGE_SECRET_ACCESS_KEY }}
+      STORAGE_ENDPOINT: ${{ secrets.STORAGE_ENDPOINT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install psycopg2-binary
+
+      - name: Install AWS CLI
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends python3-pip
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --user awscli
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch latest GWDB snapshot ZIP
+        run: |
+          set -euo pipefail
+          mkdir -p data/raw_data
+          if [ -n "${GWDB_ZIP_URL:-}" ]; then
+            echo "Fetching zip via GWDB_ZIP_URL"
+            curl -fsSL "$GWDB_ZIP_URL" -o data/raw_data/gwdb.zip
+          else
+            if [ -z "${RAW_GWDB_BUCKET:-}" ] || [ -z "${RAW_GWDB_PREFIX:-}" ]; then
+              echo "GWDB_ZIP_URL not set and RAW_GWDB_BUCKET/RAW_GWDB_PREFIX not set" >&2; exit 2; fi
+            export AWS_ACCESS_KEY_ID="$STORAGE_ACCESS_KEY_ID"
+            export AWS_SECRET_ACCESS_KEY="$STORAGE_SECRET_ACCESS_KEY"
+            export AWS_DEFAULT_REGION="auto"
+            SNAPSHOTS_PREFIX="$RAW_GWDB_PREFIX/snapshots/"
+            LATEST=$(aws s3 ls "s3://$RAW_GWDB_BUCKET/$SNAPSHOTS_PREFIX" --endpoint-url "$STORAGE_ENDPOINT" | awk '{print $NF}' | sed 's#/##' | sort | tail -n 1)
+            if [ -z "${LATEST:-}" ]; then echo "No snapshots found" >&2; exit 3; fi
+            aws s3 cp "s3://$RAW_GWDB_BUCKET/$SNAPSHOTS_PREFIX$LATEST/gwdb.zip" data/raw_data/gwdb.zip --endpoint-url "$STORAGE_ENDPOINT"
+          fi
+          if command -v unzip >/dev/null 2>&1; then unzip -n data/raw_data/gwdb.zip -d data/raw_data/; else sudo apt-get install -y --no-install-recommends unzip >/dev/null && unzip -n data/raw_data/gwdb.zip -d data/raw_data/; fi
+
+      - name: Load gwdb_ground_truth schema
+        env:
+          DELIM: ${{ github.event_name == 'workflow_dispatch' && inputs.delimiter || '|' }}
+          ENCODING: ${{ github.event_name == 'workflow_dispatch' && inputs.encoding || 'latin-1' }}
+        run: |
+          python ground_truth/loader/load_ground_truth.py \
+            --zip data/raw_data/gwdb.zip \
+            --database-url "$DATABASE_URL" \
+            --schema "gwdb_ground_truth" \
+            --delimiter "${DELIM}" \
+            --encoding "${ENCODING}"
+
+      - name: Summary
+        run: |
+          echo "### GWDB Ground Truth Loaded" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Environment: ${{ github.event_name == 'workflow_dispatch' && inputs.env || 'dev' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Schema: gwdb_ground_truth" >> "$GITHUB_STEP_SUMMARY"
+
+
