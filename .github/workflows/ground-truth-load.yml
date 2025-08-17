@@ -1,0 +1,97 @@
+name: Ground Truth Load (manual)
+
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: Which environment's secrets to use (dev|staging|prod)
+        required: false
+        default: prod
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+      schema:
+        description: Target schema name
+        required: false
+        default: ground_truth
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ground-truth-${{ inputs.env }}
+  cancel-in-progress: false
+
+jobs:
+  load:
+    runs-on: ubuntu-latest
+    environment: ${{ (inputs.env != '' && inputs.env) || 'prod' }}
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      SDR_ZIP_URL: ${{ secrets.SDR_ZIP_URL }}
+      RAW_SDR_BUCKET: ${{ vars.RAW_SDR_BUCKET }}
+      RAW_SDR_PREFIX: ${{ vars.RAW_SDR_PREFIX }}
+      STORAGE_ACCESS_KEY_ID: ${{ secrets.STORAGE_ACCESS_KEY_ID }}
+      STORAGE_SECRET_ACCESS_KEY: ${{ secrets.STORAGE_SECRET_ACCESS_KEY }}
+      STORAGE_ENDPOINT: ${{ secrets.STORAGE_ENDPOINT }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install psycopg2-binary
+
+      - name: Install AWS CLI
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y --no-install-recommends python3-pip
+          python3 -m pip install --upgrade pip
+          python3 -m pip install --user awscli
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch latest SDR snapshot ZIP
+        run: |
+          set -euo pipefail
+          mkdir -p data/raw_data
+          if [ -n "${SDR_ZIP_URL:-}" ]; then
+            echo "Fetching zip via SDR_ZIP_URL"
+            curl -fsSL "$SDR_ZIP_URL" -o data/raw_data/sdr.zip
+          else
+            if [ -z "${RAW_SDR_BUCKET:-}" ] || [ -z "${RAW_SDR_PREFIX:-}" ]; then
+              echo "SDR_ZIP_URL not set and RAW_SDR_BUCKET/RAW_SDR_PREFIX not set" >&2; exit 2; fi
+            export AWS_ACCESS_KEY_ID="$STORAGE_ACCESS_KEY_ID"
+            export AWS_SECRET_ACCESS_KEY="$STORAGE_SECRET_ACCESS_KEY"
+            export AWS_DEFAULT_REGION="auto"
+            SNAPSHOTS_PREFIX="$RAW_SDR_PREFIX/snapshots/"
+            LATEST=$(aws s3 ls "s3://$RAW_SDR_BUCKET/$SNAPSHOTS_PREFIX" --endpoint-url "$STORAGE_ENDPOINT" | awk '{print $NF}' | sed 's#/##' | sort | tail -n 1)
+            if [ -z "${LATEST:-}" ]; then echo "No snapshots found" >&2; exit 3; fi
+            aws s3 cp "s3://$RAW_SDR_BUCKET/$SNAPSHOTS_PREFIX$LATEST/sdr.zip" data/raw_data/sdr.zip --endpoint-url "$STORAGE_ENDPOINT"
+          fi
+          if command -v unzip >/dev/null 2>&1; then unzip -n data/raw_data/sdr.zip -d data/raw_data/; else sudo apt-get install -y --no-install-recommends unzip >/dev/null && unzip -n data/raw_data/sdr.zip -d data/raw_data/; fi
+
+      - name: Load ground_truth schema
+        env:
+          SCHEMA: ${{ inputs.schema }}
+        run: |
+          python ground_truth/loader/load_ground_truth.py \
+            --zip data/raw_data/sdr.zip \
+            --database-url "$DATABASE_URL" \
+            --schema "${SCHEMA:-ground_truth}"
+
+      - name: Summary
+        run: |
+          echo "### Ground Truth Loaded" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Environment: ${{ (inputs.env != '' && inputs.env) || 'prod' }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "Schema: ${{ inputs.schema }}" >> "$GITHUB_STEP_SUMMARY"
+
+

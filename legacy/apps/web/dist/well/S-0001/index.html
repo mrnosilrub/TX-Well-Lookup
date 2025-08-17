@@ -1,0 +1,81 @@
+<!DOCTYPE html><html lang="en" data-astro-cid-su5777rx> <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Well S-0001</title><base href="/"><style>:root{--ink:#0b0b0c;--bg:#f6f7f9;--card:#fff;--muted:#6b7280}html,body{height:100%}body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.4 system-ui,-apple-system,Segoe UI,Roboto,sans-serif}header[data-astro-cid-su5777rx]{position:sticky;top:0;background:var(--card);border-bottom:1px solid #e5e7eb}.wrap[data-astro-cid-su5777rx]{max-width:1000px;margin:0 auto;padding:16px}.card[data-astro-cid-su5777rx]{background:var(--card);border:1px solid #e5e7eb;border-radius:14px;padding:18px}.btn[data-astro-cid-su5777rx]{background:#111;color:#fff;border-radius:10px;padding:10px 14px;text-decoration:none}small[data-astro-cid-su5777rx]{color:var(--muted)}.modal[data-astro-cid-su5777rx]{position:fixed;inset:0;background:#0000004d;display:none;align-items:center;justify-content:center}.modal[data-astro-cid-su5777rx]>div[data-astro-cid-su5777rx]{background:#fff;border-radius:12px;padding:20px;max-width:420px}.chips[data-astro-cid-su5777rx]{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.chip[data-astro-cid-su5777rx]{background:#eef2ff;border:1px solid #c7d2fe;color:#312e81;border-radius:999px;padding:6px 10px;font-size:12px}
+</style></head> <body data-astro-cid-su5777rx> <header data-astro-cid-su5777rx> <div class="wrap" style="display:flex;gap:12px;align-items:center;" data-astro-cid-su5777rx> <strong data-astro-cid-su5777rx>TX Well Lookup</strong> <nav style="margin-left:auto;display:flex;gap:12px;align-items:center;" data-astro-cid-su5777rx> <a href="/" data-astro-cid-su5777rx>Home</a> </nav> </div> </header> <main class="wrap" style="padding-block:24px" data-astro-cid-su5777rx> <section class="card" data-api="" data-id="S-0001" data-astro-cid-su5777rx> <h2 id="well-title" data-astro-cid-su5777rx>Sample Well 1</h2> <div id="well-chips" class="chips" data-astro-cid-su5777rx>  <span class="chip" data-astro-cid-su5777rx>County: Travis</span> <span class="chip" data-astro-cid-su5777rx>Depth: 420 ft</span> <span class="chip" data-astro-cid-su5777rx>Aquifer: Edwards</span><span class="chip" data-astro-cid-su5777rx>GCD: BSEACD</span><span class="chip" data-astro-cid-su5777rx>GWDB: 260 ft</span> </div> <div style="display:flex;gap:12px;align-items:center;margin-top:12px" data-astro-cid-su5777rx> <button id="btn-report" class="btn" data-astro-cid-su5777rx>Generate Report</button> <span id="report-status" data-astro-cid-su5777rx><small data-astro-cid-su5777rx>Idle</small></span> </div> </section> <section class="card" data-astro-cid-su5777rx><h3 data-astro-cid-su5777rx>Nearby energy</h3><p data-astro-cid-su5777rx><small data-astro-cid-su5777rx>Feature deprecated.</small></p></section> <div class="modal" id="paywall" data-astro-cid-su5777rx> <div data-astro-cid-su5777rx> <h3 data-astro-cid-su5777rx>Buy credits</h3> <p data-astro-cid-su5777rx><small data-astro-cid-su5777rx>This is a stubbed paywall. Close to continue.</small></p> <div style="display:flex;gap:8px;justify-content:flex-end" data-astro-cid-su5777rx> <button id="close-paywall" class="btn" data-astro-cid-su5777rx>Close</button> </div> </div> </div> </main> <script>
+      const btn = document.getElementById('btn-report');
+      const status = document.getElementById('report-status');
+      const modal = document.getElementById('paywall');
+      const close = document.getElementById('close-paywall');
+      const container = document.currentScript.closest('section');
+      const apiBase = (container?.dataset.api || '').toString().trim();
+      const wellId = (container?.dataset.id || '').toString();
+      const titleEl = document.getElementById('well-title');
+      const chipsEl = document.getElementById('well-chips');
+      async function fetchWell(){
+        if (!apiBase || !wellId) return null;
+        const url = new URL(`v1/wells/${wellId}`, apiBase.endsWith('/') ? apiBase : apiBase + '/').toString();
+        try{
+          const res = await fetch(url, { cache: 'no-store' });
+          if (!res.ok) return null;
+          return await res.json();
+        }catch(e){ return null; }
+      }
+      (async function init(){
+        const data = await fetchWell();
+        if (data){
+          titleEl.textContent = data.name || `Well ${wellId}`;
+          chipsEl.innerHTML = '';
+          const frag = document.createDocumentFragment();
+          const add = (html) => { const div = document.createElement('div'); div.innerHTML = html; Array.from(div.childNodes).forEach(n=>frag.appendChild(n));};
+          if (data.county) add(`<span class=\"chip\">County: ${data.county}</span>`);
+          if (data.depth_ft != null) add(`<span class=\"chip\">Depth: ${data.depth_ft} ft</span>`);
+          if (data.aquifer) add(`<span class=\"chip\">Aquifer: ${data.aquifer}</span>`);
+          if (data.gwdb_depth_ft != null) add(`<span class=\"chip\">GWDB: ${data.gwdb_depth_ft} ft</span>`);
+          chipsEl.appendChild(frag);
+        }
+      })();
+      function showModal(){ modal.style.display='flex'; }
+      function hideModal(){ modal.style.display='none'; }
+      close?.addEventListener('click', hideModal);
+      async function postReport(){
+        const url = apiBase
+          ? new URL('v1/reports', apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
+          : new URL('/v1/reports', window.location.origin).toString();
+        const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ well_id: "{id}" }) });
+        if (res.status === 402) throw new Error('402');
+        if (!res.ok) throw new Error('bad');
+        const data = await res.json();
+        return data.report_id;
+      }
+      async function pollReport(reportId){
+        const url = apiBase
+          ? new URL(`v1/reports/${reportId}`, apiBase.endsWith('/') ? apiBase : apiBase + '/').toString()
+          : new URL(`/v1/reports/${reportId}`, window.location.origin).toString();
+        for (let i=0;i<10;i++){
+          const res = await fetch(url, { cache: 'no-store' });
+          if (res.ok){
+            const data = await res.json();
+            if (data && (data.pdf_url || data.zip_url)) return data;
+          }
+          await new Promise(r => setTimeout(r, 800));
+        }
+        throw new Error('timeout');
+      }
+      btn?.addEventListener('click', async () => {
+        try{
+          status.innerHTML = '<small>Requesting…</small>';
+          const reportId = await postReport();
+          status.innerHTML = '<small>Generating…</small>';
+          const data = await pollReport(reportId);
+          const pdfUrl = data.pdf_url ? new URL(data.pdf_url, document.baseURI).toString() : new URL('fake/report.pdf', document.baseURI).toString();
+          const zipUrl = data.zip_url ? new URL(data.zip_url, document.baseURI).toString() : '';
+          status.innerHTML = `<small>Ready:</small> <a class=\"btn\" href=\"${pdfUrl}\">PDF</a>${zipUrl ? ` <a class=\"btn\" href=\"${zipUrl}\">ZIP</a>` : ''}`;
+        } catch(e){
+          if ((e && e.message) === '402'){
+            status.innerHTML = '<small>Payment required</small>';
+            showModal();
+            return;
+          }
+          const fallback = new URL('fake/report.pdf', document.baseURI).toString();
+          status.innerHTML = `<small>Ready:</small> <a class=\"btn\" href=\"${fallback}\">PDF</a>`;
+        }
+      });
+    </script> </body> </html>
