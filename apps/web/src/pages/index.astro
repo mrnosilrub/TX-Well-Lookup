@@ -23,8 +23,8 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
       .app{display:grid;grid-template-columns:360px minmax(0,1fr);gap:0;min-height:calc(100vh - 96px)}
       .sidebar{border-right:1px solid var(--line);padding:18px 16px 24px;background:var(--panel);position:relative;z-index:3;isolation:isolate}
       #filters{display:flex;flex-direction:column;gap:12px;width:100%}
-      .content{display:grid;grid-template-rows:minmax(420px,1fr) 300px;position:relative;z-index:1}
-      .map{min-height:420px;position:relative;z-index:0}
+      .content{display:grid;grid-template-rows:minmax(360px,1fr) 240px;position:relative;z-index:1}
+      .map{min-height:360px;position:relative;z-index:0}
       .results{border-top:1px solid var(--line);overflow:auto;background:var(--panel)}
       label{display:block;font-size:12px;color:var(--muted);margin-top:10px}
       input, select{width:100%;padding:10px;margin-top:6px;border:1px solid var(--line);border-radius:10px;background:var(--panel);color:var(--text)}
@@ -34,12 +34,15 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
       button:hover{border-color:var(--accent);background:color-mix(in srgb, var(--panel) 90%, var(--accent))}
       #theme{margin-top:0;padding:8px 10px;border-radius:8px;line-height:1;display:inline-flex;align-items:center;gap:6px;background:var(--panel);color:var(--text);border:1px solid var(--line)}
       table{width:100%;border-collapse:collapse;font-size:14px;color:var(--text)}
-      thead{position:sticky;top:0;background:color-mix(in srgb, var(--panel) 80%, var(--text) 20%);z-index:1}
-      th.sortable{cursor:pointer}
-      th.sortable:hover{color:color-mix(in srgb, var(--accent) 70%, var(--text))}
+      thead{position:sticky;top:0;background:var(--panel);z-index:1}
+      th.sortable{cursor:pointer;transition:none;position:relative;padding-right:18px}
+      thead tr:hover th{background:color-mix(in srgb, var(--panel) 90%, var(--accent) 10%)}
+      th.sortable::after{content:'';position:absolute;right:8px;opacity:.7}
+      th.sortable[data-sort="asc"]::after{content:'\25B2'}
+      th.sortable[data-sort="desc"]::after{content:'\25BC'}
       th, td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
       tr:hover{background:color-mix(in srgb, var(--accent) 10%, var(--panel))}
-      tr.row-active{background:#102042}
+      tr.row-active{background:color-mix(in srgb, var(--panel) 85%, var(--accent) 15%)}
       #status{padding:8px 12px;color:var(--muted);font-size:12px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;background:var(--panel)}
       .spinner{width:14px;height:14px;border:2px solid #334155;border-top-color:var(--accent);border-radius:50%;animation:spin 0.8s linear infinite}
       @keyframes spin{to{transform:rotate(360deg)}}
@@ -53,8 +56,28 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
       @media (max-width: 900px){
         .app{grid-template-columns:1fr}
         .sidebar{border-right:0;border-bottom:1px solid var(--line)}
-        .content{grid-template-rows:360px auto}
+        .content{grid-template-rows:300px auto}
       }
+      /* Marker highlight */
+      .leaflet-marker-icon.selected{transform:scale(1.12);filter:drop-shadow(0 0 8px rgba(56,189,248,0.7));}
+      [data-theme='light'] .date-cell{color:#000}
+      [data-theme='dark'] .date-cell{color:var(--text)}
+      /* Cluster icon theming */
+      .marker-cluster {
+        background: transparent;
+      }
+      .marker-cluster div {
+        background: color-mix(in srgb, var(--accent) 70%, var(--panel));
+        color: #fff;
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        width: 32px; height: 32px; line-height: 32px;
+        text-align: center;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.25);
+      }
+      .marker-cluster-small div{ background: color-mix(in srgb, var(--accent) 65%, var(--panel)); }
+      .marker-cluster-medium div{ background: color-mix(in srgb, var(--accent) 75%, var(--panel)); width: 36px; height: 36px; line-height: 36px; }
+      .marker-cluster-large div{ background: color-mix(in srgb, var(--accent) 85%, var(--panel)); width: 40px; height: 40px; line-height: 40px; }
     </style>
   </head>
   <body>
@@ -114,6 +137,10 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
           <label>Radius (meters)
             <input name="radius_m" type="number" value="1609" />
           </label>
+          <div class="toggle">
+            <input id="use_cluster" type="checkbox" />
+            <span>Cluster pins (reduces visual clutter)</span>
+          </div>
           <div style="font-size:12px;color:var(--muted);margin-top:6px">Tip: click on the map to set the center when radius is enabled.</div>
         </form>
       </div>
@@ -150,7 +177,7 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
       Contains data from TWDB SDR. For reference use only.
     </footer>
     <script type="module">
-      import L from 'https://cdn.skypack.dev/leaflet@1.9.4';
+      const L = window.L;
       // Read API base URL from meta tag injected by Astro
       const API = (document.querySelector('meta[name="x-api"]')?.getAttribute('content')) || 'http://127.0.0.1:8001';
       const map = L.map('map').setView([31.0, -99.0], 6);
@@ -161,6 +188,32 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
       let radiusCircle = null;
       let selectedCenter = null;
       let suppressFitBounds = false;
+      let allRows = [];
+      let pageSize = 25;
+      let page = 1;
+      let sortKey = 'date_completed';
+      let sortDir = 'desc';
+      function updateSortIndicators(){
+        document.querySelectorAll('th.sortable').forEach(th => {
+          const key = th.getAttribute('data-key');
+          if(!key) return;
+          if(key === sortKey){ th.setAttribute('data-sort', sortDir); }
+          else { th.removeAttribute('data-sort'); }
+        });
+      }
+      function renderPage(){
+        const start = (page - 1) * pageSize;
+        const end = start + pageSize;
+        const slice = allRows.slice(start, end);
+        renderRows(slice);
+        const pages = Math.max(1, Math.ceil(allRows.length / pageSize));
+        const info = document.getElementById('pageinfo');
+        if(info){ info.textContent = `Page ${page} of ${pages} (${allRows.length} total)`; }
+        const prevBtn = document.getElementById('prev');
+        const nextBtn = document.getElementById('next');
+        if(prevBtn) prevBtn.disabled = page <= 1;
+        if(nextBtn) nextBtn.disabled = page >= pages;
+      }
       function setStatus(text, loading=false){
         const el = document.getElementById('status');
         el.innerHTML = '';
@@ -177,20 +230,39 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
         try { return JSON.parse(text); } catch (e) { console.error('Invalid JSON from API', text); throw new Error('Invalid JSON'); }
       }
 
-      function clearMarkers(){ markers.forEach(m => map.removeLayer(m)); markers = []; markersById.clear(); }
+      function clearMarkers(){
+        markers.forEach(m => { try{ map.removeLayer(m); }catch{} });
+        markers = []; markersById.clear();
+      }
       function setBanner(text){ const b = document.getElementById('banner'); if(text){ b.textContent = text; b.classList.add('show'); } else { b.classList.remove('show'); b.textContent=''; } }
       function setMapLoading(on){ const ov = document.getElementById('mapOverlay'); if(on){ ov.classList.add('show'); } else { ov.classList.remove('show'); } }
+      let selectedId = null;
+      function setMarkerSelected(id, on){
+        const m = markersById.get(id);
+        if(!m) return;
+        const el = m.getElement ? m.getElement() : m._icon;
+        if(el){ el.classList.toggle('selected', !!on); }
+        if(on && m.bringToFront) m.bringToFront();
+      }
+      function selectById(id, pan=true){
+        selectedId = id;
+        highlightRow(id);
+        setMarkerSelected(id, true);
+        markersById.forEach((_m, mid) => { if(mid !== id) setMarkerSelected(mid, false); });
+        const m = markersById.get(id);
+        if(m){ if(pan){ map.setView(m.getLatLng(), Math.max(map.getZoom(), 12)); } m.openPopup(); }
+      }
       function renderRows(items){
         const tbody = document.getElementById('rows');
         tbody.innerHTML = '';
         for(const it of items){
           const tr = document.createElement('tr');
-          tr.innerHTML = `<td>${it.id}</td><td>${it.owner||''}</td><td>${it.county||''}</td><td>${it.depth_ft??''}</td><td>${it.date_completed||''}</td>`;
-          tr.addEventListener('click', () => {
-            if(it.lat && it.lon){ map.setView([it.lat, it.lon], 12); }
-            const m = markersById.get(it.id);
-            if(m){ m.openPopup(); highlightRow(it.id); }
-          });
+          tr.innerHTML = `<td>${it.id}</td><td>${it.owner||''}</td><td>${it.county||''}</td><td>${it.depth_ft??''}</td><td class="date-cell">${it.date_completed||''}</td>`;
+          tr.tabIndex = 0;
+          tr.addEventListener('click', () => selectById(it.id));
+          tr.addEventListener('keydown', (e) => { if(e.key==='Enter' || e.key===' '){ e.preventDefault(); selectById(it.id); }});
+          tr.addEventListener('mouseenter', () => setMarkerSelected(it.id, true));
+          tr.addEventListener('mouseleave', () => { if(selectedId !== it.id) setMarkerSelected(it.id, false); });
           tr.dataset.id = it.id;
           tbody.appendChild(tr);
         }
@@ -201,16 +273,39 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
         }
       }
       let cluster;
-      function ensureCluster(){ if(!cluster){ cluster = L.markerClusterGroup(); map.addLayer(cluster); } }
+      function ensureCluster(){
+        if(!cluster){
+          cluster = L.markerClusterGroup({
+            showCoverageOnHover: false,
+            spiderfyDistanceMultiplier: 1.2,
+            iconCreateFunction: function(c){
+              const count = c.getChildCount();
+              let size = 'small';
+              if(count >= 100) size = 'large'; else if(count >= 20) size = 'medium';
+              return L.divIcon({
+                html: `<div><span>${count}</span></div>`,
+                className: `marker-cluster marker-cluster-${size}`,
+                iconSize: L.point(40, 40)
+              });
+            }
+          });
+          map.addLayer(cluster);
+        }
+      }
       function renderMarkers(items){
-        clearMarkers(); ensureCluster(); cluster.clearLayers();
+        clearMarkers();
+        const useCluster = document.getElementById('use_cluster')?.checked;
+        if(useCluster){ ensureCluster(); cluster.clearLayers(); }
+        else { if(cluster){ try{ map.removeLayer(cluster); }catch{} cluster = null; } }
         const pts = [];
         for(const it of items){
           if(it.lat && it.lon){
             const html = `<strong>${it.id}</strong><br/>${it.owner||''}<br/>${it.county||''}<br/>Depth: ${it.depth_ft??''} ft<br/>Completed: ${it.date_completed||''}`;
             const m = L.marker([it.lat, it.lon]).bindPopup(html);
-            m.on('click', () => highlightRow(it.id));
-            cluster.addLayer(m); markers.push(m);
+            m.on('click', () => selectById(it.id, false));
+            if(useCluster){ cluster.addLayer(m); }
+            else { m.addTo(map); }
+            markers.push(m);
             markersById.set(it.id, m);
             pts.push([it.lat, it.lon]);
           }
@@ -291,8 +386,9 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
           if(key==='depth_ft'){ const na=Number(va)||0, nb=Number(vb)||0; return na-nb; }
           return String(va).localeCompare(String(vb));
         };
-        allRows.sort((a,b)=>{ const c=cmp(a,b,'date_completed'); return -c; });
-        page = 1; renderPage();
+        sortKey = 'date_completed'; sortDir = 'desc';
+        allRows.sort((a,b)=>{ const c=cmp(a,b,sortKey); return sortDir==='asc'? c : -c; });
+        page = 1; updateSortIndicators(); renderPage();
         renderMarkers(allRows);
         if(useRadius && params.radius_m){
           setStatus(rows.length ? `${rows.length} results within ${params.radius_m} m` : 'No results for this radius');
@@ -349,7 +445,7 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
             const c = String(va).localeCompare(String(vb), undefined, { numeric: true });
             return sortDir==='asc'? c : -c;
           });
-          page=1; renderPage();
+          page=1; updateSortIndicators(); renderPage();
         });
       });
       // Pagination
@@ -373,6 +469,8 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001'
         if(document.getElementById('use_radius').checked){ suppressFitBounds = true; runSearch(); }
       });
       document.getElementById('use_radius').addEventListener('change', () => { runSearch(); });
+      const clusterToggle = document.getElementById('use_cluster');
+      if(clusterToggle){ clusterToggle.addEventListener('change', () => { renderMarkers(allRows); }); }
       // Fetch as-of for footer
       (async () => {
         try{
