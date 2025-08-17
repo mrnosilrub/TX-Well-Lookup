@@ -1,0 +1,152 @@
+---
+const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8001';
+---
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>TX Well Lookup</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <style>
+      :root{--bg:#0b1020;--panel:#121a33;--muted:#e2e8f0;--accent:#5eead4;--line:#263255}
+      body{font-family:system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;margin:0;background:var(--bg);color:#fff}
+      header, footer{padding:14px 20px;border-bottom:1px solid var(--line)}
+      header strong{letter-spacing:0.3px}
+      .app{display:grid;grid-template-columns:340px 1fr;gap:0;min-height:calc(100vh - 96px)}
+      .sidebar{border-right:1px solid var(--line);padding:16px 14px 24px;background:var(--panel)}
+      .content{display:grid;grid-template-rows:1fr 280px}
+      .map{min-height:400px}
+      .results{border-top:1px solid var(--line);overflow:auto;background:var(--panel)}
+      label{display:block;font-size:12px;color:var(--muted);margin-top:10px}
+      input, select{width:100%;padding:10px;margin-top:6px;border:1px solid var(--line);border-radius:10px;background:#0e1730;color:#fff}
+      button{margin-top:14px;padding:10px 14px;border-radius:10px;border:1px solid var(--line);background:#101a38;color:#fff;cursor:pointer}
+      button:hover{border-color:#3b82f6}
+      table{width:100%;border-collapse:collapse;font-size:14px}
+      thead{position:sticky;top:0;background:#0f1731}
+      th, td{padding:10px;border-bottom:1px solid var(--line);text-align:left}
+      tr:hover{background:#0e1836}
+    </style>
+  </head>
+  <body>
+    <header>
+      <strong>TX Well Lookup</strong>
+    </header>
+    <div class="app">
+      <div class="sidebar">
+        <form id="filters">
+          <label>County
+            <input name="county" placeholder="e.g., Galveston" />
+          </label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <label>Depth min (ft)
+                <input name="depth_min" type="number" />
+              </label>
+            </div>
+            <div>
+              <label>Depth max (ft)
+                <input name="depth_max" type="number" />
+              </label>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <label>Date from
+                <input name="date_from" type="date" />
+              </label>
+            </div>
+            <div>
+              <label>Date to
+                <input name="date_to" type="date" />
+              </label>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button type="submit">Apply</button>
+            <button type="button" id="reset">Reset</button>
+          </div>
+        </form>
+      </div>
+      <div class="content">
+        <div id="map" class="map"></div>
+        <div class="results">
+          <table>
+            <thead>
+              <tr><th>Well ID</th><th>Owner</th><th>County</th><th>Depth (ft)</th><th>Completed</th></tr>
+            </thead>
+            <tbody id="rows">
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+    <footer>
+      Contains data from TWDB SDR. For reference use only.
+    </footer>
+    <script type="module">
+      import L from 'https://cdn.skypack.dev/leaflet@1.9.4';
+      const API = `${PUBLIC_API_URL}`;
+      const map = L.map('map').setView([31.0, -99.0], 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM' }).addTo(map);
+      let markers = [];
+
+      async function fetchResults(params){
+        const url = new URL('/v1/search', API);
+        Object.entries(params).forEach(([k,v]) => { if(v!=='' && v!=null) url.searchParams.set(k, v); });
+        const res = await fetch(url);
+        if(!res.ok){ throw new Error('Failed'); }
+        return await res.json();
+      }
+
+      function clearMarkers(){ markers.forEach(m => map.removeLayer(m)); markers = []; }
+      function renderRows(items){
+        const tbody = document.getElementById('rows');
+        tbody.innerHTML = '';
+        for(const it of items){
+          const tr = document.createElement('tr');
+          tr.innerHTML = `<td>${it.id}</td><td>${it.owner||''}</td><td>${it.county||''}</td><td>${it.depth_ft??''}</td><td>${it.date_completed||''}</td>`;
+          tr.addEventListener('click', () => { if(it.lat && it.lon){ map.setView([it.lat, it.lon], 12); }});
+          tbody.appendChild(tr);
+        }
+      }
+      function renderMarkers(items){
+        clearMarkers();
+        const pts = [];
+        for(const it of items){
+          if(it.lat && it.lon){
+            const m = L.marker([it.lat, it.lon]).addTo(map).bindPopup(`${it.id}<br/>${it.owner||''}`);
+            markers.push(m);
+            pts.push([it.lat, it.lon]);
+          }
+        }
+        if(pts.length){
+          const b = L.latLngBounds(pts);
+          map.fitBounds(b.pad(0.2));
+        }
+      }
+
+      async function runSearch(){
+        const form = document.getElementById('filters');
+        const data = Object.fromEntries(new FormData(form).entries());
+        const items = await fetchResults({
+          county: data.county,
+          depth_min: data.depth_min || undefined,
+          depth_max: data.depth_max || undefined,
+          date_from: data.date_from || undefined,
+          date_to: data.date_to || undefined,
+          limit: 100,
+        });
+        // Support both array and {items: [...]} shapes
+        const rows = Array.isArray(items) ? items : (items.items || []);
+        renderRows(rows);
+        renderMarkers(rows);
+      }
+
+      document.getElementById('filters').addEventListener('submit', (e) => { e.preventDefault(); runSearch(); });
+      document.getElementById('reset').addEventListener('click', () => { (document.getElementById('filters')).reset(); runSearch(); });
+      runSearch();
+    </script>
+  </body>
+  </html>
+
+

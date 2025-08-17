@@ -14,6 +14,13 @@ psql "$DATABASE_URL" -f scripts/app_apply_views.sql
 
 # Verify view and sample rows
 psql "$DATABASE_URL" -f scripts/app_verify.sql
+
+# Run API locally (Milestone 2)
+cd api
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+export DATABASE_URL="$DATABASE_URL"
+uvicorn app:app --reload --port 8000
 ```
 
 
