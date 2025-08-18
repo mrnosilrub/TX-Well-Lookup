@@ -62,7 +62,7 @@ class ReportFilters(BaseModel):
     lat: Optional[float] = None
     lon: Optional[float] = None
     radius_m: Optional[int] = None
-    limit: Optional[int] = None
+    limit: Optional[int] = 100
     source: Optional[str] = None  # 'sdr' | 'gwdb' | 'all'
 
 app = FastAPI(title="TX Well Lookup API", version="0.1.0")
@@ -355,7 +355,7 @@ def search(
     lat: Optional[float] = Query(default=None),
     lon: Optional[float] = Query(default=None),
     radius_m: Optional[int] = Query(default=None),
-    limit: Optional[int] = Query(default=None),
+    limit: int = Query(default=50, ge=1, le=2000),
     source: Optional[str] = Query(default="sdr", pattern="^(sdr|gwdb|all)$"),
 ):
     if pool is None and not DATABASE_URL:
@@ -391,15 +391,11 @@ def search(
         params.extend([lat, lat, lon, radius_m])
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     table = _resolve_wells_table(source)
-    base_sql = (
+    sql = (
         "SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD'), source, source_id "
-        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC"
+        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
     )
-    if limit is not None:
-        sql = base_sql + " LIMIT %s"
-        params.append(limit)
-    else:
-        sql = base_sql
+    params.append(limit)
     conn = _get_conn()
     try:
         with conn.cursor() as cur:
@@ -423,7 +419,7 @@ def export_search_csv(
     lat = filters.lat if filters else None
     lon = filters.lon if filters else None
     radius_m = filters.radius_m if filters else None
-    limit = (filters.limit if (filters and filters.limit) is not None else None)
+    limit = (filters.limit if (filters and filters.limit) else 1000)
     source = (filters.source if filters and filters.source else "sdr")
     """Export current filtered results as CSV. Columns match list view and include lat/lon."""
     if pool is None and not DATABASE_URL:
@@ -464,15 +460,11 @@ def export_search_csv(
         params.extend([lat, lat, lon, radius_m])
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     table = _resolve_wells_table(source)
-    base_sql = (
+    sql = (
         "SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD'), source, source_id "
-        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC"
+        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
     )
-    if limit is not None:
-        sql = base_sql + " LIMIT %s"
-        params.append(limit)
-    else:
-        sql = base_sql
+    params.append(limit)
 
     conn = _get_conn()
     try:
@@ -514,7 +506,7 @@ def export_pdf(
     lat = filters.lat if filters else None
     lon = filters.lon if filters else None
     radius_m = filters.radius_m if filters else None
-    limit = (filters.limit if (filters and filters.limit) is not None else None)
+    limit = (filters.limit if (filters and filters.limit) else 100)
     source = (filters.source if (filters and filters.source) else "sdr")
     """Simple PDF export summarizing current result set (first page list)."""
     # Reuse the same filter building
@@ -538,15 +530,11 @@ def export_pdf(
         ); params.extend([lat, lat, lon, radius_m])
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
     table = _resolve_wells_table(source)
-    base_sql = (
+    sql = (
         "SELECT id, owner, county, lat, lon, depth_ft, to_char(date_completed, 'YYYY-MM-DD'), source, source_id "
-        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC"
+        f"FROM {table} " + where + " ORDER BY date_completed DESC NULLS LAST, id ASC LIMIT %s"
     )
-    if limit is not None:
-        sql = base_sql + " LIMIT %s"
-        params.append(limit)
-    else:
-        sql = base_sql
+    params.append(limit)
 
     rows: List[tuple] = []
     as_of: Optional[str] = None

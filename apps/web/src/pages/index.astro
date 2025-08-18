@@ -167,7 +167,23 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
                 <input type="hidden" id="source" name="source" value="sdr" />
               </div>
             </div>
-            
+            <div>
+              <label>Results</label>
+              <div class="select-wrap" id="limWrap">
+                <button type="button" class="select-btn" id="limitBtn" aria-haspopup="listbox" aria-expanded="false">
+                  <span id="limitLabel">100</span>
+                  <span class="select-caret"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 20 20" fill="none"><path d="M5.25 7.5L10 12.25L14.75 7.5" stroke="#94a3b8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                </button>
+                <ul class="select-list" id="limitList" role="listbox">
+                  <li role="option" data-value="100">100</li>
+                  <li role="option" data-value="250">250</li>
+                  <li role="option" data-value="500">500</li>
+                  <li role="option" data-value="1000">1000</li>
+                  <li role="option" data-value="2000">2000</li>
+                </ul>
+                <input type="hidden" id="limit" name="limit" value="100" />
+              </div>
+            </div>
           </div>
           <label>County
             <input name="county" placeholder="e.g., Galveston" />
@@ -274,13 +290,19 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
           console.error('Leaflet not loaded yet');
           return;
         }
-        const map = L.map('map').setView([31.0, -99.0], 6);
+      const map = L.map('map').setView([31.0, -99.0], 6);
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OSM' }).addTo(map);
       const clusterGroup = L.markerClusterGroup({ disableClusteringAtZoom: 13, spiderfyOnMaxZoom: true, showCoverageOnHover: false, iconCreateFunction: (cluster) => {
         const count = cluster.getChildCount();
-        const sizeClass = count < 10 ? 'sm' : count < 100 ? 'md' : count < 1000 ? 'lg' : 'xl';
-        const html = `<div class="cluster ${sizeClass}"><span class="cluster__count">${count}</span></div>`;
-        return L.divIcon({ html, className: 'cluster-wrap', iconSize: [60,60], iconAnchor: [30,30] });
+        const size = count < 10 ? 36 : count < 100 ? 44 : count < 1000 ? 52 : 60;
+        const html = `<div style="
+            width:${size}px;height:${size}px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+            background:radial-gradient(65% 65% at 30% 30%, rgba(255,255,255,0.55) 0%, rgba(255,255,255,0.1) 100%),
+                       linear-gradient(135deg,#6366f1,#06b6d4);
+            color:#fff;box-shadow:0 6px 18px rgba(0,0,0,0.35);border:1px solid rgba(255,255,255,0.25);
+            font-weight:700;letter-spacing:.2px;text-shadow:0 1px 2px rgba(0,0,0,0.25)
+          ">${count}</div>`;
+        return L.divIcon({ html, className: 'cluster-wrap', iconSize: [size,size], iconAnchor: [size/2,size/2] });
       }});
       map.addLayer(clusterGroup);
       let markers = [];
@@ -301,7 +323,11 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       const sourceBtn = document.getElementById('sourceBtn');
       const sourceLabel = document.getElementById('sourceLabel');
       const sourceList = document.getElementById('sourceList');
-      
+      const limitHidden = document.getElementById('limit');
+      const limWrap = document.getElementById('limWrap');
+      const limitBtn = document.getElementById('limitBtn');
+      const limitLabel = document.getElementById('limitLabel');
+      const limitList = document.getElementById('limitList');
       const searchAreaBtn = document.getElementById('searchAreaBtn');
       const searchAreaDiv = document.getElementById('searchArea');
 
@@ -401,8 +427,16 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
         clearMarkers();
         const pts = [];
         const makeWellIcon = (source) => {
-          const variant = (source || 'sdr').toLowerCase() === 'gwdb' ? 'gwdb' : 'sdr';
-          const html = `<div class="well-wrap"><div class="well well--${variant}"><span class="well__dot"></span></div></div>`;
+          const isGwdb = (source || 'sdr').toLowerCase() === 'gwdb';
+          const bg = isGwdb
+            ? 'linear-gradient(135deg,#10b981,#059669)'
+            : 'linear-gradient(135deg,#3b82f6,#1d4ed8)';
+          const html = `<div style="width:22px;height:22px;">
+              <div style="width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+                  box-shadow:0 2px 6px rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.25);background:${bg}">
+                <span style="width:6px;height:6px;border-radius:50%;background:#fff;opacity:.95"></span>
+              </div>
+            </div>`;
           return L.divIcon({ html, className: 'well-icon', iconSize: [22,22], iconAnchor: [11,11], popupAnchor: [0,-12] });
         };
         for(const it of items){
@@ -469,7 +503,7 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
           depth_max: data.depth_max || undefined,
           date_from: data.date_from || undefined,
           date_to: data.date_to || undefined,
-          limit: undefined,
+          limit: Number(data.limit || 100),
         };
         const useRadius = document.getElementById('use_radius').checked;
         const r = Number(data.radius_m || 0);
@@ -526,7 +560,7 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       function applyQueryDefaults(){
         const params = new URLSearchParams(window.location.search);
         const source = params.get('source'); if(source){ sourceHidden.value = source; sourceLabel.textContent = source.toUpperCase(); }
-        
+        const limit = params.get('limit'); if(limit){ limitHidden.value = limit; limitLabel.textContent = limit; }
         const county = params.get('county'); if(county){ document.querySelector('input[name="county"]').value = county; }
         const df = params.get('date_from'); if(df) document.querySelector('input[name="date_from"]').value = df;
         const dt = params.get('date_to'); if(dt) document.querySelector('input[name="date_to"]').value = dt;
@@ -538,7 +572,7 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
 
       document.getElementById('filters').addEventListener('submit', (e) => { e.preventDefault(); currentBbox=null; runSearch().catch(() => setStatus('Error loading')); });
       let t; const deb = (fn, ms=300) => (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); };
-      ;['source','county','depth_min','depth_max','date_from','date_to','radius_m'].forEach(n => { const el = document.querySelector(`[name="${n}"]`); if(el){ el.addEventListener('input', deb(() => { if(n!=='radius_m'){ /* leave bbox intact */ } runSearch().catch(() => setStatus('Error loading')); })); } });
+      ;['source','limit','county','depth_min','depth_max','date_from','date_to','radius_m'].forEach(n => { const el = document.querySelector(`[name="${n}"]`); if(el){ el.addEventListener('input', deb(() => { if(n!=='radius_m'){ /* leave bbox intact */ } runSearch().catch(() => setStatus('Error loading')); })); } });
       document.getElementById('reset').addEventListener('click', () => { (document.getElementById('filters')).reset(); sourceHidden.value='sdr'; sourceLabel.textContent='SDR'; limitHidden.value='100'; limitLabel.textContent='100'; currentBbox=null; setStatus('Ready'); renderRows([]); clearMarkers(); });
 
       // Pagination
@@ -558,7 +592,10 @@ const PUBLIC_API_URL = import.meta.env.PUBLIC_API_URL || 'http://127.0.0.1:8000'
       // Custom dropdown behavior: source
       sourceBtn.addEventListener('click', () => { const open = dsWrap.classList.toggle('open'); sourceBtn.setAttribute('aria-expanded', open ? 'true' : 'false'); });
       sourceList.addEventListener('click', (e) => { const li = e.target.closest('li'); if(!li) return; const val = li.getAttribute('data-value') || 'sdr'; sourceHidden.value = val; sourceLabel.textContent = val.toUpperCase(); dsWrap.classList.remove('open'); sourceBtn.setAttribute('aria-expanded', 'false'); sourceHidden.dispatchEvent(new Event('input', { bubbles: true })); });
-      document.addEventListener('click', (e) => { if(!dsWrap.contains(e.target)){ dsWrap.classList.remove('open'); sourceBtn.setAttribute('aria-expanded', 'false'); } });
+      // Custom dropdown behavior: limit
+      limitBtn.addEventListener('click', () => { const open = limWrap.classList.toggle('open'); limitBtn.setAttribute('aria-expanded', open ? 'true' : 'false'); });
+      limitList.addEventListener('click', (e) => { const li = e.target.closest('li'); if(!li) return; const val = li.getAttribute('data-value') || '100'; limitHidden.value = val; limitLabel.textContent = val; limWrap.classList.remove('open'); limitBtn.setAttribute('aria-expanded', 'false'); limitHidden.dispatchEvent(new Event('input', { bubbles: true })); });
+      document.addEventListener('click', (e) => { if(!dsWrap.contains(e.target)){ dsWrap.classList.remove('open'); sourceBtn.setAttribute('aria-expanded', 'false'); } if(!limWrap.contains(e.target)){ limWrap.classList.remove('open'); limitBtn.setAttribute('aria-expanded', 'false'); } });
 
       // Search this area flow
       map.on('moveend', () => { const useRadius = document.getElementById('use_radius').checked; if(!useRadius){ areaDirty = true; searchAreaDiv.classList.add('show'); } });
